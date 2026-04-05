@@ -1,0 +1,39 @@
+{
+  "name": "simply-dice",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "",
+  "scripts": {
+    "dev": "vite build",
+    "build": "tsc --build && vite build",
+    "esbuild": "esbuild src/main.ts --bundle --keep-names --minify --sourcemap --outdir=dist/src",
+    "clean": "tsc --build --clean"
+  },
+  "keywords": [],
+  "author": "Deatrathias",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/collections": "^5.1.5",
+    "@types/node": "^25.5.0",
+    "@types/three": "^0.183.1",
+    "@typescript-eslint/eslint-plugin": "^8.57.2",
+    "@typescript-eslint/parser": "^8.57.2",
+    "esbuild": "^0.27.4",
+    "eslint": "^9.39.4",
+    "rollup": "^4.60.1",
+    "rollup-plugin-copy": "^3.5.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.2",
+    "vite-plugin-static-copy": "^4.0.0",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.6.0"
+  },
+  "dependencies": {
+    "@7h3laughingman/foundry-helpers": "^13.351.8",
+    "@7h3laughingman/foundry-types": "^13.351.20",
+    "@dimforge/rapier3d-compat": "^0.19.3",
+    "@rimbu/sorted": "^2.1.10",
+    "quaternion": "^2.2.0",
+    "three": "^0.183.2"
+  }
+}

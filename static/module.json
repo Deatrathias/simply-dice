@@ -1,0 +1,29 @@
+{
+  "id": "simply-dice",
+  "title": "Simply Dice",
+  "version": "#{VERSION}#",
+  "socket": true,
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13.351"
+  },
+  "url": "#{URL}#",
+  "manifest": "#{MANIFEST}#",
+  "download": "#{DOWNLOAD}#",
+  "relationships": { },
+  "authors": [
+    {
+      "name": "Deatrathias",
+      "discord": "deatrathias",
+      "flags": {}
+    }
+  ],
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+  ],
+  "languages": [
+  ],
+  "description": ""
+}

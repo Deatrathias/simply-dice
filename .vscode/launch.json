@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "command": "npm run build",
+      "name": "Run npm build",
+      "request": "launch",
+      "type": "node-terminal",
+      "autoAttachChildProcesses": false
+    }
+  ]
+}
