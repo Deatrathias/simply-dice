@@ -1,4 +1,6 @@
+import { getSetting } from "@7h3laughingman/foundry-helpers/utilities";
 import { DiceModel } from "dice-definition.ts";
+import { SETTING } from "settings";
 import * as THREE from "three";
 import * as UTILS from "utils.ts";
 
@@ -50,7 +52,7 @@ class DiceObject {
         this.diceModel = diceModel;
         this.graphics = diceModel.instantiateModel(materials);
         this.graphics.traverse(o => o.castShadow = true);
-        this.lifetime = 4;
+        this.lifetime = getSetting(SETTING.TIME_UNTIL_DISAPPEARANCE);
         this.rotationOffset = new THREE.Quaternion().identity();
     }
 

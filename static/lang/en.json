@@ -1,0 +1,30 @@
+{
+    "SIMPLY-DICE": {
+        "Settings": {
+            "Timescale": "Animation Time Scale",
+            "TimescaleHint": "Multiplies the speed of the dice animation.",
+            "TimeUntilDisappearance": "Time Until Dice Disappear",
+            "TimeUntilDisappearanceHint": "Number of seconds until a die disappears after the roll is done.",
+            "WaitForRoll": "Wait for Roll",
+            "WaitForRollHint": "Wait for the dice animation to finish before releasing the roll.",
+            "MaxWaitTime": "Maximum Wait Time",
+            "MaxWaitTimeHint": "If waiting for roll, the maximum duration to wait if the dice roll takes too long.",
+            "ThrowImpulse": "Throw Impulse",
+            "ThrowImpulseHint": "Intensity of the impulse at which dice are thrown.",
+            "DiceSize": "Dice Size",
+            "DiceSizeHint": "The size of the dice on screen.",
+            "MaxDiceOnScreen": "Maximum Dice on Screen",
+            "MaxDiceOnScreenHint": "The maximum number of dice at a time. Extra dice will be culled. Leave empty for no limit.",
+            "Shadows": "Shadows",
+            "ShadowsHint": "Dice cast shadows.",
+            "ShadowMapResolution": "Shadow Map Resolution",
+            "ShadowMapResolutionHint": "The resolution of the shadow map. Higher values mean sharper shadows.",
+            "Antialiasing": "Anti-aliasing",
+            "AntialiasingHint": "Enable anti-aliasing. Requires reload.",
+            "DisplayOnTop": "Display on Top",
+            "DisplayOnTopHint": "Render dice above UI elements.",
+            "Sounds": "Dice Sounds",
+            "SoundsHint": "Play sounds when dice are rolling."
+        }
+    }
+}

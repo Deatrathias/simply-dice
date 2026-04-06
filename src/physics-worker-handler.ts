@@ -1,4 +1,6 @@
-import { MainMessage, PhysicsMessage, SimulationStartData } from "worker-types.js";
+import { getSetting } from "@7h3laughingman/foundry-helpers/utilities";
+import { SETTING } from "settings";
+import { MainMessage, PhysicsMessage, PhysicsSettings, SimulationStartData } from "worker-types.js";
 
 let physicsWorker: Worker | undefined = undefined;
 
@@ -35,7 +37,9 @@ function loadObj(denomination: string, url: string) {
 }
 
 function initPhysicsWorld() {
-    send({ type: "init" });
+    send({ type: "init", data: {
+        throwImpulse: getSetting(SETTING.THROW_IMPULSE)
+    } });
 }
 
 function resizeArea(width: number, height: number) {
@@ -45,6 +49,13 @@ function resizeArea(width: number, height: number) {
             width,
             height
         }
+    });
+}
+
+function updateSettings(settings: PhysicsSettings) {
+    send({
+        type: "updateSettings",
+        data: settings
     });
 }
 
@@ -62,4 +73,4 @@ function removeDice(id: number) {
     });
 }
 
-export { startWorker, loadObj, initPhysicsWorld, resizeArea, startSimulation, removeDice }
+export { startWorker, loadObj, initPhysicsWorld, resizeArea, updateSettings, startSimulation, removeDice }

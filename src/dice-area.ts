@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
+import { getSetting, MODULE } from "@7h3laughingman/foundry-helpers/utilities";
 import { getDiceModel } from "dice-definition.ts";
 import { DiceObject } from "dice.ts";
 import * as WORKER from "physics-worker-handler.ts";
@@ -9,6 +9,7 @@ import { DoRollMessage, socketName } from "socket";
 import { SortedSet } from "@rimbu/sorted";
 import { playDiceSound } from "audio";
 import { debugging } from "hooks";
+import { SETTING } from "settings";
 
 function initDiceArea() {
     game.simplyDice.diceArea = new DiceArea();
@@ -33,6 +34,8 @@ class DiceArea {
     private timer: THREE.Timer;
 
     private renderer: THREE.WebGLRenderer;
+
+    divContainer?: HTMLDivElement;
 
     scene: THREE.Scene;
 
@@ -64,6 +67,8 @@ class DiceArea {
 
     debugModel?: THREE.Object3D;
 
+    maxDice: number | null;
+
     get timescale(): number { 
         return this.timer.getTimescale();
     }
@@ -85,22 +90,24 @@ class DiceArea {
     constructor() {
         this.timer = new THREE.Timer();
         this.timer.connect(document);
-        this.timer.setTimescale(2);
+        this.timer.setTimescale(getSetting(SETTING.TIMESCALE));
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(30, 0.5, 0.1, 1000);
         this.fixedMaterials = [];
         this.rng = new foundry.dice.MersenneTwister();
         this.initScene();
         this.allDice = [];
-        this.renderer = new THREE.WebGLRenderer({ alpha: true });
+        this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: getSetting(SETTING.ANTIALIASING) });
         this.renderer.setClearColor(0, 0);
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.VSMShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFShadowMap;
         this.renderer.setAnimationLoop((time) => this.update(time));
+        this.changeSizeSetting(getSetting(SETTING.DICE_SIZE), true);
         this.resizeArea();
         this.fovRatio = this.camera.position.y * (Math.tan(Math.toRadians(this.camera.fov / 2)));
         this.rollPromiseResolve = new Map();
         this.collisionsSet = SortedSet.empty();
+        this.maxDice = getSetting(SETTING.MAX_DICE_ON_SCREEN);
+        this.changeShadows(getSetting(SETTING.SHADOWS));
     }
 
     private initScene() {
@@ -109,12 +116,9 @@ class DiceArea {
         this.dirLight = new THREE.DirectionalLight(new THREE.Color("white"), 1);
         this.dirLight.position.set(15, 30, -10);
         this.dirLight.target.position.set(0, 0, 0);
-        this.dirLight.castShadow = true;
-        this.dirLight.shadow.mapSize.width = 2048;
-        this.dirLight.shadow.mapSize.height = 2048;
+        this.changeShadowMap(parseInt(getSetting<string>(SETTING.SHADOW_MAP_RESOLUTION)));
         this.scene.add(this.dirLight);
         this.floor = new THREE.Mesh(new THREE.PlaneGeometry(), new THREE.ShadowMaterial({ opacity: 0.5 })).rotateX(-HALF_PI);
-        this.floor.receiveShadow = true;
         this.scene.add(this.floor);
         this.camera.position.y = 40;
         this.camera.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), -HALF_PI);
@@ -138,11 +142,16 @@ class DiceArea {
     }
 
     generateContainer(): HTMLDivElement {
-        const div = document.createElement("div");
-        div.id="simply-dice-layer";
-        div.style="position: absolute; width: 100%; height: 100%; pointer-events: none; z-index: 1000";
-        div.appendChild(this.renderer.domElement);
-        return div;
+        this.divContainer = document.createElement("div");
+        this.divContainer.id="simply-dice-layer";
+        this.updateContainerStyle();
+        this.divContainer.appendChild(this.renderer.domElement);
+        return this.divContainer;
+    }
+
+    updateContainerStyle() {
+        if (this.divContainer)
+            this.divContainer.style = "position: absolute; width: 100%; height: 100%; pointer-events: none;" + (getSetting<boolean>(SETTING.DISPLAY_ON_TOP) ? "z-index: 1000" : "");
     }
 
     resizeArea() {
@@ -170,10 +179,52 @@ class DiceArea {
         this.camera.updateProjectionMatrix();
     }
 
-    changeHeight(height: number) {
+    changeHeight(height: number, noResize: boolean = false) {
         this.camera.position.y = height;
-        const areaSize = this.camera.getViewSize(height, new THREE.Vector2());
-        WORKER.resizeArea(areaSize.x, areaSize.y);
+        if (!noResize) {
+            this.resizeArea();
+        }
+    }
+
+    changeSizeSetting(size: number, noResize: boolean = false) {
+        this.changeHeight(100 - size * 0.8, noResize);
+    }
+
+    changeMaxDice(maxDice: number | null) {
+        this.maxDice = maxDice;
+        this.cullExtraDice();
+    }
+
+    cullExtraDice() {
+        if (this.maxDice && this.allDice.length > this.maxDice) {
+            // Cull dices above maximum
+            console.log(this.allDice.length - this.maxDice);
+            const toRemove = this.allDice.length - this.maxDice;
+            for (let i = 0; i < toRemove; i++) {
+                const dice = this.allDice[i];
+                dice.clearSimulation();
+                dice.lifetime = 0;
+            }
+        }
+    }
+
+    changeShadows(enabled: boolean) {
+        this.renderer.shadowMap.enabled = enabled;
+        if (this.floor)
+            this.floor.receiveShadow = enabled;
+        if (this.dirLight)
+            this.dirLight.castShadow = enabled;
+    }
+
+    changeShadowMap(resolution: number) {
+        if (this.dirLight && this.dirLight.shadow.mapSize.x != resolution) {
+            this.dirLight.shadow.mapSize.copy({ x: resolution, y: resolution });
+            // If shadow map resolution changed, delete shadow map to rebuild it
+            this.dirLight.shadow.map?.dispose();
+            this.dirLight.shadow.map = null;
+            this.dirLight.shadow.camera.updateMatrix();
+        }
+        
     }
 
     debugLine?: THREE.LineSegments;
@@ -242,7 +293,7 @@ class DiceArea {
                     this.rollPromiseResolve.delete(rollId);
                     resolve();
                 }
-            }, 4000); } );
+            }, getSetting<number>(SETTING.MAX_WAIT_TIME) * 1000); } );
     }
 
     enqueueRoll(roll: RollParameters) {
@@ -253,10 +304,14 @@ class DiceArea {
         if (this.rollStack.length == 0)
             return;
 
+        let count = 0;
         const rolls = [];
         while (this.rollStack.length > 0) {
             const params = this.rollStack.pop();
             if (!params)
+                break;
+
+            if (this.maxDice && count >= this.maxDice)
                 break;
 
             this.rng.seed(params.seed);
@@ -278,6 +333,8 @@ class DiceArea {
                     // If there is no rotation for the result, ignore the dice
                     if (!diceModel.rotationMap.has(result)) 
                         continue;
+
+                    count++;
                     const dice = new DiceObject(this.nextDiceId, diceModel, this.fixedMaterials, result, params.rollId);
                     this.nextDiceId++;
                     simulationData.diceTerms.push({
@@ -286,6 +343,8 @@ class DiceArea {
                     });
 
                     this.allDice.push(dice);
+                    if (this.maxDice && count >= this.maxDice)
+                        break;
                 }
             }
             if (simulationData.diceTerms.length == 0)
@@ -296,6 +355,20 @@ class DiceArea {
         }
         if (rolls.length == 0)
             return;
+
+        if (this.rollStack.length > 0) {
+            // Clear rolls if they are above the dice cap
+            this.rollStack.forEach(r => {
+                if (r.rollId) {
+                    const resolve = this.rollPromiseResolve.get(r.rollId);
+                    if (resolve)
+                        resolve();
+                }
+            });
+            this.rollStack.length = 0;   
+        }
+
+        this.cullExtraDice();
 
         const simulationData = {
             startTime: this.timer.getElapsed(),

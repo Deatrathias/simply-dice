@@ -10,20 +10,34 @@
   "url": "#{URL}#",
   "manifest": "#{MANIFEST}#",
   "download": "#{DOWNLOAD}#",
-  "relationships": { },
+  "relationships": {
+    "requires": [
+      {
+        "id": "lib-wrapper",
+        "type": "module",
+        "compatibility": {
+          "minimum": "1.13.4.0",
+          "verified": "1.13.4.0"
+        }
+      }
+    ]
+  },
   "authors": [
     {
       "name": "Deatrathias",
-      "discord": "deatrathias",
-      "flags": {}
+      "discord": "deatrathias"
     }
   ],
   "esmodules": [
     "scripts/main.js"
   ],
-  "styles": [
-  ],
+  "styles": [],
   "languages": [
+    {
+      "name": "en",
+      "lang": "en",
+      "path": "lang/en.json"
+    }
   ],
-  "description": ""
+  "description": "Display 3D dice when rolls are made"
 }

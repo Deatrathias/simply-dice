@@ -1,5 +1,5 @@
 import RAPIER from "@dimforge/rapier3d-compat";
-import { DebugRenderMessage, DiceSimulation, PhysicsMessage, SimulationCompleteMessage, SimulationStartData } from "worker-types.js";
+import { DebugRenderMessage, DiceSimulation, PhysicsMessage, PhysicsSettings, SimulationCompleteMessage, SimulationStartData } from "worker-types.js";
 import { Quaternion } from "quaternion";
 
 const diceObj: Map<string, RAPIER.ColliderDesc> = new Map();
@@ -15,10 +15,13 @@ self.onmessage = async (event) => {
             loadObj(message.data.url, message.data.denomination);
             break;
         case "init":
-            physicsArea = await init();
+            physicsArea = await init(message.data);
             break;
         case "resizeArea":
             (await getPhysicsArea()).resizeArea(message.data.width, message.data.height);
+            break;
+        case "updateSettings":
+            (await getPhysicsArea()).updateSettings(message.data);
             break;
         case "startSimulation":
             (await getPhysicsArea()).startSimulation(message.data);
@@ -77,7 +80,9 @@ class PhysicsArea {
 
     walls: Record<string, RAPIER.Collider>;
 
-    constructor() {
+    throwImpulse: number;
+
+    constructor(settings: PhysicsSettings) {
         this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
 
         this.floor = this.world.createCollider(RAPIER.ColliderDesc.cuboid(30, 1, 30).setTranslation(0, -1, 0));
@@ -91,23 +96,38 @@ class PhysicsArea {
 
         // Bouncy walls
         Object.entries(this.walls).forEach(w => w[1].setRestitution(1));
+
+        this.throwImpulse = 20;
+        this.updateSettings(settings);
     }
 
     resizeArea(width: number, height: number) {
         this.currentWidth = width;
         this.currentHeight = height;
-        this.walls.right.setTranslation({ x: this.currentWidth / 2 + 0.5, y: 10, z: 0 });
-        this.walls.left.setTranslation({ x: -this.currentWidth / 2 - 0.5, y: 10, z: 0 });
-        this.walls.back.setTranslation({ x: 0, y: 10, z: this.currentHeight / 2 + 0.5 });
-        this.walls.front.setTranslation({ x: 0, y: 10, z: -this.currentHeight / 2 - 0.5 });
+        const halfWidth = width / 2;
+        const halfHeight = height / 2;
+        this.floor.setHalfExtents({ x: halfWidth, y: 1, z: halfHeight });
+        this.walls.right.setHalfExtents({ x: 0.5, y: 10, z: halfHeight + 1 });
+        this.walls.right.setTranslation({ x: halfWidth + 0.5, y: 10, z: 0 });
+        this.walls.left.setHalfExtents({ x: 0.5, y: 10, z: halfHeight + 1 });
+        this.walls.left.setTranslation({ x: -halfWidth - 0.5, y: 10, z: 0 });
+        this.walls.back.setHalfExtents({ x: halfWidth + 1, y: 10, z: 0.5 });
+        this.walls.back.setTranslation({ x: 0, y: 10, z: halfHeight + 0.5 });
+        this.walls.front.setHalfExtents({ x: halfWidth + 1, y: 10, z: 0.5 });
+        this.walls.front.setTranslation({ x: 0, y: 10, z: -halfHeight - 0.5 });
         //this.debugRender();
+    }
+
+    updateSettings(settings: PhysicsSettings) {
+        if (settings.throwImpulse !== undefined)
+            this.throwImpulse = settings.throwImpulse;
     }
 
     getAreaIntersection(angle: number): { x: number, y: number } {
         const cos = Math.cos(angle);
         const sin = Math.sin(angle);
 
-        const distance = Math.min(cos !== 0 ? this.currentWidth / Math.abs(cos) : Infinity, 
+        const distance = Math.min(cos !== 0 ? this.currentWidth / Math.abs(cos) : Infinity,
             sin !== 0 ? this.currentHeight / Math.abs(sin) : Infinity) / 2;
 
         return { x: distance * cos, y: distance * sin };
@@ -142,11 +162,10 @@ class PhysicsArea {
                 if (!obj)
                     continue;
 
-                const impulse = toRotation.rotateVector({ x: -20 - random(rng) * 10, y: -10, z: 0 }) as RAPIER.Vector;
-
-                const offsetRotation = toRotation.mul(Quaternion.fromAxisAngle([0, 1, 0], ((count % 3) -1) * Math.PI / 6));
+                const impulse = toRotation.rotateVector({ x: -this.throwImpulse - random(rng) * (this.throwImpulse / 5), y: -this.throwImpulse / 2, z: 0 }) as RAPIER.Vector;
+                const offsetRotation = toRotation.mul(Quaternion.fromAxisAngle([0, 1, 0], ((count % 3) - 1) * Math.PI / 6));
                 const offsetVector = offsetRotation.rotateVector({ x: (-2 - Math.floor((count + 2) / 3)), y: 0, z: 0 }) as RAPIER.Vector;
-                
+
                 const startRotation = new Quaternion(random(rng) * 2 - 1, random(rng) * 2 - 1, random(rng) * 2 - 1, random(rng) * 2 - 1).normalize();
                 const dice = new SimulatedDice(this, diceTerm.id, simulationData.startTime, baseStepCount, maxStepCount, obj, addVectors(centerStartPoint, offsetVector), startRotation);
                 dice.rigidbody.applyImpulse(impulse, true);
@@ -181,7 +200,7 @@ class PhysicsArea {
             });
             replayingDices.forEach(d => d.replaySimulationStep());
             simulating.forEach(d => d.recordStep());
-            
+
             // If every body is sleeping, end the simulation early
             if (!simulating.find(d => !d.rigidbody.isSleeping() && d.inactiveSteps < 10)) {
                 maxStepCount = i + 1;
@@ -211,7 +230,7 @@ class PhysicsArea {
 
         simulatedDices.push(...simulating);
     }
-    
+
     removeDice(id: number) {
         const diceIndex = simulatedDices.findIndex(d => d.id == id);
 
@@ -226,9 +245,9 @@ let physicsArea: PhysicsArea | null = null;
 
 const physicsAreaResolvers: ((resolve: PhysicsArea | PromiseLike<PhysicsArea>) => void)[] = [];
 
-async function init(): Promise<PhysicsArea> {
+async function init(settings: PhysicsSettings): Promise<PhysicsArea> {
     await RAPIER.init();
-    const result = new PhysicsArea();
+    const result = new PhysicsArea(settings);
     physicsAreaResolvers.forEach(resolve => resolve(result));
     physicsAreaResolvers.length = 0;
     return result;
@@ -326,7 +345,7 @@ class SimulatedDice {
     replaySimulation(time: number): boolean {
         this.currentStep = Math.floor((time - this.startTime) / this.area.world.timestep)
 
-        if (this.currentStep >= this.maxStep) 
+        if (this.currentStep >= this.maxStep)
             return false;
 
         const stepIndex = this.currentStep * 7;

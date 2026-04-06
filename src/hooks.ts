@@ -1,14 +1,16 @@
-import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
+import { getSetting, MODULE } from "@7h3laughingman/foundry-helpers/utilities";
 import { EvaluateRollParams, Rolled } from "@7h3laughingman/foundry-types/client/dice/_module.mjs";
 import { ChatMessageCreateOperation } from "@7h3laughingman/foundry-types/common/documents/chat-message.mjs";
 import { initDiceArea } from "dice-area.ts";
 import { loadDefinitions } from "dice-definition.ts";
 import * as WORKER from "physics-worker-handler.ts";
+import { registerSettings, SETTING } from "settings";
 import { initSocket } from "socket";
 
 export const debugging = false;
 
 Hooks.on("init", () => {
+    registerSettings();
     initSocket();
     WORKER.startWorker();
     loadDefinitions();
@@ -17,8 +19,9 @@ Hooks.on("init", () => {
     libWrapper.register(MODULE.id, "foundry.dice.Roll.prototype._evaluate", async (wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, options?: EvaluateRollParams) => {
         const result = await wrapped(options);
         if (game.simplyDice.diceArea?.can3dRoll(result)) {
-            const promise = game.simplyDice.diceArea?.rollAndWait(result.dice);
-            await promise;
+            const promise = game.simplyDice.diceArea.rollAndWait(result.dice);
+            if (getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
+                await promise;
             result.options["simplyDice-noSound"] = true;
         }
         return result;

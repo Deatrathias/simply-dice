@@ -1,4 +1,5 @@
-import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
+import { getSetting, MODULE } from "@7h3laughingman/foundry-helpers/utilities";
+import { SETTING } from "settings";
 
 const diceSounds = ["sounds/dice-hit1.ogg", "sounds/dice-hit2.ogg", "sounds/dice-hit3.ogg", "sounds/dice-hit4.ogg"];
 
@@ -7,6 +8,8 @@ async function playSound(url: string) {
 }
 
 function playDiceSound() {
+    if (!getSetting<boolean>(SETTING.SOUNDS))
+        return;
     const url = diceSounds[Math.floor(Math.random() * diceSounds.length)];
     playSound(url);
 }

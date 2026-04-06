@@ -1,4 +1,4 @@
-export type PhysicsMessage = LoadObjMessage | InitMessage | ResizeAreaMessage | SimulationStartMessage | RemoveDiceMessage;
+export type PhysicsMessage = LoadObjMessage | InitMessage | ResizeAreaMessage | UpdateSettingsMessage | SimulationStartMessage | RemoveDiceMessage;
 
 export type LoadObjMessage = {
     type: "loadObj",
@@ -11,7 +11,8 @@ export type LoadObjMessageDate = {
 }
 
 export type InitMessage = {
-    type: "init"
+    type: "init",
+    data: PhysicsSettings
 }
 
 export type ResizeAreaMessage = {
@@ -20,6 +21,15 @@ export type ResizeAreaMessage = {
         width: number,
         height: number
     }
+}
+
+export type UpdateSettingsMessage = {
+    type: "updateSettings";
+    data: PhysicsSettings
+}
+
+export type PhysicsSettings = {
+    throwImpulse?: number
 }
 
 export type SimulationStartMessage = {
