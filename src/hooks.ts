@@ -1,4 +1,5 @@
 import { getSetting, MODULE } from "@7h3laughingman/foundry-helpers/utilities";
+import { Canvas } from "@7h3laughingman/foundry-types/client/canvas/_module.mjs";
 import { EvaluateRollParams, Rolled } from "@7h3laughingman/foundry-types/client/dice/_module.mjs";
 import { ChatMessageCreateOperation } from "@7h3laughingman/foundry-types/common/documents/chat-message.mjs";
 import { initDiceArea } from "dice-area.ts";

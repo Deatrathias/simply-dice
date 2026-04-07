@@ -208,8 +208,13 @@ class PhysicsArea {
             }
         }
         eventQueue.free();
-        collisions.buffer.resize(collisionCount * Uint16Array.BYTES_PER_ELEMENT);
-
+        try {
+        if (collisionCount > 0)
+            collisions.buffer.resize((collisionCount - 1) * Uint16Array.BYTES_PER_ELEMENT);
+        } catch (e: any) {
+            console.log(collisionCount);
+            throw e;
+        }
         simulating.forEach(d => d.endRecording(maxStepCount));
 
         const buffersToSend: ArrayBuffer[] = [];
@@ -218,13 +223,14 @@ class PhysicsArea {
             buffersToSend.push(copiedArray.buffer);
             return { id: d.id, posRot: copiedArray } satisfies DiceSimulation
         });
-        buffersToSend.push(collisions.buffer);
+        if (collisionCount > 0)
+            buffersToSend.push(collisions.buffer);
 
         self.postMessage({
             type: "simulationComplete", data: {
                 timestep: this.world.timestep,
                 simulations,
-                collisions
+                collisions: collisionCount > 0 ? collisions : undefined
             }
         } satisfies SimulationCompleteMessage, { transfer: buffersToSend });
 

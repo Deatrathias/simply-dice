@@ -18,6 +18,7 @@ function initDiceArea() {
 type RollParameters = {
     seed: number,
     rollId?: number,
+    createdAt?: number,
     diceTerms: DiceTermParameter[]
 }
 
@@ -35,15 +36,17 @@ class DiceArea {
 
     private renderer: THREE.WebGLRenderer;
 
+    textureLoader: THREE.TextureLoader;
+
     divContainer?: HTMLDivElement;
 
     scene: THREE.Scene;
 
-    private camera: THREE.PerspectiveCamera;
+    private camera!: THREE.PerspectiveCamera;
 
-    dirLight?: THREE.DirectionalLight;
+    dirLight!: THREE.DirectionalLight;
 
-    floor?: THREE.Mesh;
+    floor!: THREE.Mesh;
 
     private fixedMaterials: THREE.Material[];
 
@@ -69,6 +72,20 @@ class DiceArea {
 
     maxDice: number | null;
 
+    defaultEnvironment!: THREE.Texture | null;
+
+    immersiveCanvasContext!: OffscreenCanvasRenderingContext2D | null;
+
+    immersiveCanvasTexture!: THREE.CanvasTexture<PIXI.ICanvas | null> | null;
+
+    PMREMgenerator!: THREE.PMREMGenerator;
+
+    immersiveUpdateTexture!: boolean;
+
+    immersiveEquirectangularTexture!: THREE.WebGLRenderTarget | null;
+
+    immersiveEnvironmentUpdateDelay!: number;
+
     get timescale(): number { 
         return this.timer.getTimescale();
     }
@@ -91,8 +108,9 @@ class DiceArea {
         this.timer = new THREE.Timer();
         this.timer.connect(document);
         this.timer.setTimescale(getSetting(SETTING.TIMESCALE));
+        this.textureLoader = new THREE.TextureLoader();
         this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(30, 0.5, 0.1, 1000);
+        
         this.fixedMaterials = [];
         this.rng = new foundry.dice.MersenneTwister();
         this.initScene();
@@ -103,6 +121,9 @@ class DiceArea {
         this.renderer.setAnimationLoop((time) => this.update(time));
         this.changeSizeSetting(getSetting(SETTING.DICE_SIZE), true);
         this.resizeArea();
+
+        this.setupImmersiveEnvironment();
+        
         this.fovRatio = this.camera.position.y * (Math.tan(Math.toRadians(this.camera.fov / 2)));
         this.rollPromiseResolve = new Map();
         this.collisionsSet = SortedSet.empty();
@@ -111,6 +132,7 @@ class DiceArea {
     }
 
     private initScene() {
+        this.camera = new THREE.PerspectiveCamera(30, 0.5, 0.1, 1000);
         const light = new THREE.HemisphereLight(new THREE.Color("white"), new THREE.Color("black"), 1);
         this.scene.add(light);
         this.dirLight = new THREE.DirectionalLight(new THREE.Color("white"), 1);
@@ -123,13 +145,11 @@ class DiceArea {
         this.camera.position.y = 40;
         this.camera.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), -HALF_PI);
 
-        const textureLoader = new THREE.TextureLoader();
-        textureLoader.load(MODULE.relativePath("textures/d20template.png"), (texture) => { 
+        this.textureLoader.load(MODULE.relativePath("textures/d20template.png"), (texture) => { 
             texture.flipY = false;
             this.fixedMaterials = [
-                new THREE.MeshStandardMaterial({ color: 0xffffffff, roughness: 0.2, metalness: 0, map: texture }), 
-                new THREE.MeshStandardMaterial({ color: 0xffff0000, roughness: 0, metalness: 0 })];
-
+                new THREE.MeshStandardMaterial({ color: 0xffffffff, roughness: 0.5, metalness: 1, map: texture }), 
+                new THREE.MeshStandardMaterial({ color: 0xffffffff, roughness: 0.5, metalness: 1, map: texture })];
             if (!debugging)
                 return;
 
@@ -139,6 +159,50 @@ class DiceArea {
                 this.scene.add(this.debugModel);
             }
         });
+    }
+
+    setupImmersiveEnvironment() {
+        this.defaultEnvironment = null;
+        this.textureLoader.load(MODULE.relativePath("textures/defaultenvironment.png"), texture => {
+            texture.flipY = false;
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            this.defaultEnvironment = texture;
+            if (!getSetting<boolean>(SETTING.IMMERSIVE_ENVIRONMENT))
+                this.scene.environment = texture;
+        });
+
+        this.immersiveEnvironmentUpdateDelay = 0;
+        this.immersiveCanvasTexture = null;
+        this.PMREMgenerator = new THREE.PMREMGenerator(this.renderer);
+        this.immersiveUpdateTexture = false;
+        this.immersiveEquirectangularTexture = null;
+        this.immersiveCanvasContext = null;
+        // Only refresh the canvas texture when the canvas is updated
+        canvas.app?.ticker.add((t) => {
+            if (this.allDice.length > 0 && getSetting<boolean>(SETTING.IMMERSIVE_ENVIRONMENT)) {
+                this.immersiveEnvironmentUpdateDelay -= t;
+                if (this.immersiveEnvironmentUpdateDelay <= 0) {
+                    if (!this.immersiveCanvasContext || !this.immersiveCanvasTexture)
+                        this.setupImmersiveCanvas();
+                    
+                    if (this.immersiveCanvasTexture)
+                        this.immersiveCanvasTexture.needsUpdate = true;
+
+                    this.immersiveUpdateTexture = true;
+                    // Delay to avoid updating on every frame
+                    this.immersiveEnvironmentUpdateDelay += 5;
+                }
+            }
+        });
+    }
+
+    private async setupImmersiveCanvas() {
+        if (this.immersiveCanvasContext)
+            return;
+
+        const immersiveCanvas = new OffscreenCanvas(1024, 512);
+        this.immersiveCanvasContext = immersiveCanvas.getContext("2d");
+        this.immersiveCanvasTexture = new THREE.CanvasTexture(immersiveCanvas);
     }
 
     generateContainer(): HTMLDivElement {
@@ -161,16 +225,13 @@ class DiceArea {
         this.camera.updateProjectionMatrix();
         this.camera.getViewSize(this.camera.position.y, this.areaSize);
         WORKER.resizeArea(this.areaSize.x, this.areaSize.y);
-        const shadowCam = this.dirLight?.shadow.camera;
-        if (shadowCam) {
-            const highest = Math.max(this.areaSize.x, this.areaSize.y) / 2;
-            shadowCam.right = highest;
-            shadowCam.left = -highest;
-            shadowCam.top = highest;
-            shadowCam.bottom = -highest;
-        }
-        if (this.floor)
-            this.floor.scale.copy({ x: this.areaSize.x, y: this.areaSize.y, z: 1 });
+        const shadowCam = this.dirLight.shadow.camera;
+        const highest = Math.max(this.areaSize.x, this.areaSize.y) / 2;
+        shadowCam.right = highest;
+        shadowCam.left = -highest;
+        shadowCam.top = highest;
+        shadowCam.bottom = -highest;
+        this.floor.scale.copy({ x: this.areaSize.x, y: this.areaSize.y, z: 1 });
     }
 
     changeFov(fov: number) {
@@ -208,16 +269,23 @@ class DiceArea {
         }
     }
 
+    changeImmersiveEnvironment(enabled: boolean) {
+        if (enabled) {
+            this.immersiveEnvironmentUpdateDelay = 0;
+        }
+        else {
+            this.scene.environment = this.defaultEnvironment;
+        }
+    }
+
     changeShadows(enabled: boolean) {
         this.renderer.shadowMap.enabled = enabled;
-        if (this.floor)
-            this.floor.receiveShadow = enabled;
-        if (this.dirLight)
-            this.dirLight.castShadow = enabled;
+        this.floor.receiveShadow = enabled;
+        this.dirLight.castShadow = enabled;
     }
 
     changeShadowMap(resolution: number) {
-        if (this.dirLight && this.dirLight.shadow.mapSize.x != resolution) {
+        if (this.dirLight.shadow.mapSize.x != resolution) {
             this.dirLight.shadow.mapSize.copy({ x: resolution, y: resolution });
             // If shadow map resolution changed, delete shadow map to rebuild it
             this.dirLight.shadow.map?.dispose();
@@ -242,11 +310,23 @@ class DiceArea {
 
         if (this.rollStack.length > 0)
             this.doRoll();
+
+        if (this.immersiveUpdateTexture) 
+            this.immersiveCanvasContext?.drawImage(canvas.app.view as HTMLCanvasElement, 0, 0, 1024, 512);
+
         this.renderer.render(this.scene, this.camera);
 
         if ((this.collisionsSet.min() ?? Infinity) < elapsed) {
             playDiceSound();
             this.collisionsSet = this.collisionsSet.slice({ start: elapsed });
+        }
+
+        if (this.immersiveUpdateTexture) {
+            if (getSetting<boolean>(SETTING.IMMERSIVE_ENVIRONMENT) && this.immersiveCanvasTexture) {
+                this.immersiveEquirectangularTexture = this.PMREMgenerator.fromEquirectangular(this.immersiveCanvasTexture, this.immersiveEquirectangularTexture);
+                this.scene.environment = this.immersiveEquirectangularTexture?.texture ?? null;
+            }
+            this.immersiveUpdateTexture = false;
         }
     }
 
@@ -260,6 +340,9 @@ class DiceArea {
     }
 
     can3dRoll(roll: foundry.dice.Roll): boolean {
+        if (getSetting<boolean>(SETTING.DISABLE_FOR_USER))
+            return false;
+
         const dice = roll.dice;
         if (!dice)
             return false;
@@ -297,6 +380,7 @@ class DiceArea {
     }
 
     enqueueRoll(roll: RollParameters) {
+        roll.createdAt = Date.now();
         this.rollStack.push(roll);
     }
     
@@ -308,7 +392,8 @@ class DiceArea {
         const rolls = [];
         while (this.rollStack.length > 0) {
             const params = this.rollStack.pop();
-            if (!params)
+            // Don't show rolls too old
+            if (!params || (params.createdAt && Date.now() - params.createdAt > 10000))
                 break;
 
             if (this.maxDice && count >= this.maxDice)
@@ -375,14 +460,15 @@ class DiceArea {
             rolls,
         } satisfies SimulationStartData;
 
-        WORKER.startSimulation(simulationData);        
+        WORKER.startSimulation(simulationData);      
     }
 
     receiveSimulationDate(data: SimulationCompleteData) {
         for (const simulation of data.simulations)
             this.allDice.find(d => d.id == simulation.id)?.runSimulation(this.scene, this.timer.getElapsed(), data.timestep, simulation.posRot);
 
-        this.collisionsSet = SortedSet.from(this.collisionsSet, [...data.collisions].map(c => this.timer.getElapsed() + c * data.timestep));
+        if (data.collisions)
+            this.collisionsSet = SortedSet.from(this.collisionsSet, [...data.collisions].map(c => this.timer.getElapsed() + c * data.timestep));
     }
 
     debugWindowRotation(x: number, y: number, z: number) {
