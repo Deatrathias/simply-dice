@@ -1,12 +1,14 @@
-import { getSetting, MODULE } from "@7h3laughingman/foundry-helpers/utilities";
-import { Canvas } from "@7h3laughingman/foundry-types/client/canvas/_module.mjs";
+import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
 import { EvaluateRollParams, Rolled } from "@7h3laughingman/foundry-types/client/dice/_module.mjs";
+import { DatabaseUpdateOperation } from "@7h3laughingman/foundry-types/common/abstract/_module.mjs";
 import { ChatMessageCreateOperation } from "@7h3laughingman/foundry-types/common/documents/chat-message.mjs";
 import { initDiceArea } from "dice-area.ts";
 import { loadDefinitions } from "dice-definition.ts";
+import { DiceMaterialConfigGroup, UserDiceMaterials } from "dice-materials";
 import * as WORKER from "physics-worker-handler.ts";
 import { registerSettings, SETTING } from "settings";
 import { initSocket } from "socket";
+import { initTextureManager } from "texture-manager";
 
 export const debugging = false;
 
@@ -17,19 +19,16 @@ Hooks.on("init", () => {
     loadDefinitions();
 
     const libWrapper = (globalThis as any).libWrapper;
-    libWrapper.register(MODULE.id, "foundry.dice.Roll.prototype._evaluate", async (wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, options?: EvaluateRollParams) => {
-        const result = await wrapped(options);
-        if (game.simplyDice.diceArea?.can3dRoll(result)) {
-            const promise = game.simplyDice.diceArea.rollAndWait(result.dice);
-            if (getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
-                await promise;
-            result.options["simplyDice-noSound"] = true;
-        }
-        return result;
-    });
+    libWrapper.register(MODULE.id, "foundry.dice.Roll.prototype._evaluate", 
+        async (wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, options?: EvaluateRollParams) => game.simplyDice.diceArea?.onEvaluate(wrapped, options));
 });
 
-Hooks.on("ready", async () => {
+Hooks.on("setup", () => {
+    initTextureManager();
+});
+
+Hooks.on("ready", () => {
+    UserDiceMaterials.initMaterialsForAllUsers();
     WORKER.initPhysicsWorld();
     initDiceArea();
     if (!game.simplyDice.diceArea)
@@ -54,10 +53,11 @@ Hooks.on("ready", async () => {
                 "reset": () => game.simplyDice.diceArea?.debugWindowReset()
             }
         });
-        await debugWindow.render(true);
-        [...debugWindow.element.getElementsByTagName("input")].find(i => i.name === "fov")?.addEventListener("input", (event) => { 
-            const slider = event.target as HTMLInputElement;
-            game.simplyDice.diceArea?.changeHeight(parseInt(slider.value));
+        debugWindow.render(true).then(() => {
+            [...debugWindow.element.getElementsByTagName("input")].find(i => i.name === "fov")?.addEventListener("input", (event) => { 
+                const slider = event.target as HTMLInputElement;
+                game.simplyDice.diceArea?.changeHeight(parseInt(slider.value));
+            });
         });
     }
 });
@@ -70,4 +70,11 @@ Hooks.on("preCreateChatMessage", (message: ChatMessage, data: object, options: P
             });
         }
     }
+});
+
+Hooks.on("updateSetting", (setting: Setting, changed: object, options: Partial<DatabaseUpdateOperation<Setting>>, userId: string) => {
+    if (setting.key !== `${MODULE.id}.${SETTING.DICE_MATERIALS}` || !setting.user)
+        return;
+
+    game.simplyDice.userMaterials?.get(setting.user)?.updateMaterials((setting.value ?? undefined) as DiceMaterialConfigGroup);
 });

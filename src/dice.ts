@@ -1,7 +1,8 @@
 import { getSetting } from "@7h3laughingman/foundry-helpers/utilities";
 import { DiceModel } from "dice-definition.ts";
+import { DiceMaterialSet } from "dice-materials";
 import { SETTING } from "settings";
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import * as UTILS from "utils.ts";
 
 type SimulationStep = {
@@ -14,6 +15,9 @@ type Simulation = {
     steps: SimulationStep[]
 }
 
+/**
+ * Representation of a 3D dice object
+ */
 class DiceObject {
     id: number;
 
@@ -43,7 +47,7 @@ class DiceObject {
         return this.lifetime > 0;
     }
 
-    constructor(id: number, diceModel: DiceModel, materials: THREE.Material[], targetResult: number, rollId?: number) {
+    constructor(id: number, diceModel: DiceModel, materials: DiceMaterialSet, targetResult: number, rollId?: number) {
         this.id = id;
         this.rollId = rollId;
         this.running = false;
@@ -56,6 +60,11 @@ class DiceObject {
         this.rotationOffset = new THREE.Quaternion().identity();
     }
 
+    /**
+     * Get the value that the dice is facing based on the rotation
+     * @param rotation Rotation of the dice
+     * @returns Value of the dice, or undefined if no result
+     */
     rotationFaceValue(rotation: THREE.QuaternionLike): number | undefined {
         let closestValue: number | undefined = undefined;
         let closestDot = -Infinity;
@@ -75,6 +84,13 @@ class DiceObject {
         return closestValue;
     }
 
+    /**
+     * Prepare the dice to run the calculated simulation
+     * @param scene THREE scene
+     * @param time The current frame time
+     * @param timestep The timestep of the physics simulation
+     * @param posRot Array containing positions and rotations
+     */
     runSimulation(scene: THREE.Scene, time: number, timestep: number, posRot: Float32Array) {
         const steps: SimulationStep[] = [];
 
@@ -104,6 +120,11 @@ class DiceObject {
         this.runStartTime = time;
     }
 
+    /**
+     * Advance the simulation
+     * @param time The current frame time
+     * @param deltaTime The delta time, unscaled
+     */
     updateSimulationGraphics(time: number, deltaTime: number) {
         // Cases where the browser is offscreen
         if (deltaTime < 0)
@@ -140,6 +161,9 @@ class DiceObject {
         }
     }
 
+    /**
+     * Remove all simulation data and complete the roll
+     */
     clearSimulation() {
         this.simulation = undefined;
         this.running = false;

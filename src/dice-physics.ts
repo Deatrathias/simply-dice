@@ -1,3 +1,6 @@
+/**
+ * Physics web worker
+ */
 import RAPIER from "@dimforge/rapier3d-compat";
 import { DebugRenderMessage, DiceSimulation, PhysicsMessage, PhysicsSettings, SimulationCompleteMessage, SimulationStartData } from "worker-types.js";
 import { Quaternion } from "quaternion";

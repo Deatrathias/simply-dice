@@ -2,8 +2,8 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "command": "npm run build",
-      "name": "Run npm build",
+      "command": "npm run dev",
+      "name": "Run npm dev",
       "request": "launch",
       "type": "node-terminal",
       "autoAttachChildProcesses": false

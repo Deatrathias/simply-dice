@@ -4,6 +4,9 @@ import { MainMessage, PhysicsMessage, PhysicsSettings, SimulationStartData } fro
 
 let physicsWorker: Worker | undefined = undefined;
 
+/**
+ * Start the physics worker
+ */
 function startWorker() {
     physicsWorker = new Worker(new URL("./dice-physics.ts", import.meta.url), { type: "module" });
 
@@ -14,6 +17,10 @@ function send(message: PhysicsMessage) {
     physicsWorker?.postMessage(message);
 }
 
+/**
+ * Handle messages received by the physics worker
+ * @param event Message event
+ */
 function handleMessage(event: MessageEvent) {
     const message: MainMessage = event.data;
 
@@ -27,6 +34,11 @@ function handleMessage(event: MessageEvent) {
     }
 }
 
+/**
+ * Load an OBJ file to be used as a collider by the physics worker
+ * @param denomination Denomination of the dice
+ * @param url URL of the OBJ file
+ */
 function loadObj(denomination: string, url: string) {
     send({
         type: "loadObj",
@@ -36,12 +48,20 @@ function loadObj(denomination: string, url: string) {
         }});
 }
 
+/**
+ * Initialize physics
+ */
 function initPhysicsWorld() {
     send({ type: "init", data: {
         throwImpulse: getSetting(SETTING.THROW_IMPULSE)
     } });
 }
 
+/**
+ * Resize the physics area
+ * @param width 
+ * @param height 
+ */
 function resizeArea(width: number, height: number) {
     send({
         type: "resizeArea",
@@ -52,6 +72,10 @@ function resizeArea(width: number, height: number) {
     });
 }
 
+/**
+ * Update the physics worker when settings are changed
+ * @param settings Changed settings
+ */
 function updateSettings(settings: PhysicsSettings) {
     send({
         type: "updateSettings",
@@ -59,6 +83,10 @@ function updateSettings(settings: PhysicsSettings) {
     });
 }
 
+/**
+ * Run a physics roll simulation
+ * @param simulationData Data to send for the simulation
+ */
 function startSimulation(simulationData: SimulationStartData) {
     send({
         type: "startSimulation",
@@ -66,6 +94,10 @@ function startSimulation(simulationData: SimulationStartData) {
     });
 }
 
+/**
+ * Remove a dice from the physics area
+ * @param id Id of the dice
+ */
 function removeDice(id: number) {
     send({
         type: "removeDice",

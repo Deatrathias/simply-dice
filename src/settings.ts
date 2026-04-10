@@ -1,4 +1,5 @@
 import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
+import { DiceMaterialConfigGroup } from "dice-materials";
 import * as WORKER from "physics-worker-handler";
 
 export const SETTING = { 
@@ -9,6 +10,7 @@ export const SETTING = {
     MAX_WAIT_TIME: "maxWaitTime",
     THROW_IMPULSE: "throwImpulse",
     // User
+    DICE_MATERIALS: "diceMaterials",
     DISABLE_FOR_USER: "disableForUser",
     // Client
     DICE_SIZE: "diceSize",
@@ -42,12 +44,14 @@ export function registerSettings() {
         onChange: value => game.simplyDice.diceArea?.changeShadows(value as boolean)});
     registerSetting({ id: SETTING.SHADOW_MAP_RESOLUTION, type: String, choices: { 512: "512x512", 1024: "1024x1024", 2048: "2048x2048", 4096: "4096x4096" }, default: 2048, scope: "client",
         onChange: value => game.simplyDice.diceArea?.changeShadowMap(parseInt(value as string)) });
-    registerSetting({ id: SETTING.IMMERSIVE_ENVIRONMENT, type: Boolean, default: true, scope: "client",
+    registerSetting({ id: SETTING.IMMERSIVE_ENVIRONMENT, type: Boolean, default: false, scope: "client",
         onChange: value => game.simplyDice.diceArea?.changeImmersiveEnvironment(value as boolean)});
     registerSetting({ id: SETTING.ANTIALIASING, type: Boolean, default: true, scope: "client", requiresReload: true });
     registerSetting({ id: SETTING.DISPLAY_ON_TOP, type: Boolean, default: false, scope: "client", 
         onChange: value => game.simplyDice.diceArea?.updateContainerStyle() });
     registerSetting({ id: SETTING.SOUNDS, type: Boolean, default: true, scope: "client" });
+
+    game.settings.register(MODULE.id, SETTING.DICE_MATERIALS, { name: SETTING.DICE_MATERIALS.capitalize(), type: new UserDiceConfigField(), default: {}, scope: "user", config: false});
 }
 
 function registerSetting(setting: { id: string, type: any, default: any, choices?: Record<string, unknown>, scope: "world" | "user" | "client", onChange?: (choice: unknown) => void | Promise<void>, requiresReload?: boolean}) {
@@ -64,4 +68,21 @@ function registerSetting(setting: { id: string, type: any, default: any, choices
         onChange: setting.onChange,
         requiresReload: setting.requiresReload
     });
+}
+
+class UserDiceConfigField extends foundry.data.fields.ObjectField<Record<string, DiceMaterialConfigGroup>> {
+    override validate(value: unknown, options?: foundry.data.DataFieldValidationOptions): foundry.data.validation.DataModelValidationFailure | void {
+        if (!value)
+            return new foundry.data.validation.DataModelValidationFailure();
+
+        if (typeof value !== "object")
+            return new foundry.data.validation.DataModelValidationFailure(value);
+
+        for (const entry of Object.entries(value)) {
+            if (typeof entry[0] !== "string")
+                return new foundry.data.validation.DataModelValidationFailure(entry[0]);
+            if (typeof entry[1] !== "object")
+                return new foundry.data.validation.DataModelValidationFailure(entry[1]);
+        }
+    }
 }

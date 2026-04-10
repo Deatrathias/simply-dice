@@ -1,25 +1,35 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import * as WORKER from "physics-worker-handler.ts";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import definitionsJson from "definitions.json" with { type: "json" };
+import { DiceMaterialSet } from "dice-materials";
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
 
 type DiceDefinition = {
     denomination: string,
     modelUrl: string,
     colliderUrl: string
-    rotationForValue: {
-        value: number,
-        rotation: THREE.QuaternionLike 
-    }[]
+    rotationForValue: Record<string, THREE.QuaternionTuple>,
+    text: {
+        height: number,
+        items: {
+            label: string,
+            position: THREE.Vector2Tuple,
+            rotation?: number
+        }[]
+    }
 };
 
 const gltfLoader = new GLTFLoader();
 
+/**
+ * Represent the model of a 3D dice to be duplicated for instanciation
+ */
 class DiceModel {
 
     readonly definition: DiceDefinition;
 
-    readonly model: THREE.Group;
+    readonly model: THREE.Mesh;
 
     readonly rotationMap: Map<number, THREE.QuaternionLike>;
 
@@ -27,11 +37,11 @@ class DiceModel {
         return !!this.model;
     }
 
-    private constructor(definition: DiceDefinition, model: THREE.Group) {
+    private constructor(definition: DiceDefinition, model: THREE.Mesh) {
         this.definition = definition;
         this.model = model;
         this.rotationMap = new Map();
-        definition.rotationForValue.forEach(rv => this.rotationMap.set(rv.value, rv.rotation));
+        Object.entries(definition.rotationForValue).forEach(rv => this.rotationMap.set(parseInt(rv[0]), new THREE.Quaternion(rv[1][0], rv[1][1], rv[1][2], rv[1][3])));
     }
 
     /**
@@ -44,16 +54,24 @@ class DiceModel {
         WORKER.loadObj(definition.denomination, definition.colliderUrl);
 
         // Load model
-        const modelPromise = new Promise<THREE.Group>((resolve, reject) =>
+        const modelPromise = new Promise<THREE.Mesh>((resolve, reject) =>
          gltfLoader.load(definition.modelUrl, (gltf) => {
-            const child = gltf.scene.children[0];
-            if (child.type !== "Group") {
+            const meshes: THREE.Mesh[] = [];
+            gltf.scene.traverse(o => { 
+                if ((o as THREE.Mesh).isMesh)
+                    meshes.push((o as THREE.Mesh));
+            });
+            if (meshes.length == 0) {
                 console.error(`Invalid model at ${definition.modelUrl}`);
                 reject("Model error");
                 return;
             }
-            resolve(child as THREE.Group);
-        })).then((model) => new DiceModel(definition, model));
+            const materials = meshes.flatMap(m => m.material);
+            // Combines meshes into one geometry
+            const combinedGeometry = BufferGeometryUtils.mergeGeometries(meshes.map(m => m.geometry), true);
+            const mesh = new THREE.Mesh(combinedGeometry, materials);
+            resolve(mesh);
+        })).then((model) => new DiceModel(definition, model), (reason) => { throw new Error(reason); });
 
         return modelPromise;
     }
@@ -61,17 +79,31 @@ class DiceModel {
     /**
      * Create a new instance of a dice mesh
      * @param materials The materials to apply to this mesh
-     * @returns A new Group that copies the model
+     * @returns A new Mesh that copies the model
      */
-    instantiateModel(materials: THREE.Material[]): THREE.Group {
+    instantiateModel(materialSet: DiceMaterialSet): THREE.Mesh {
         if (!this.model)
             throw new Error("Model is missing");
-        const group = new THREE.Group();
-        group.copy(this.model, true);
-        group.children.forEach((child, index) => (child as THREE.Mesh).material = materials[index]);
-        return group;
+        if (!materialSet.faces.material || !materialSet.edges.material)
+            throw new Error("Materials not generated");
+        const mesh = new THREE.Mesh();
+        mesh.copy(this.model);
+        mesh.material = (mesh.material as THREE.Material[]).map(m => {
+            if (m.name === "Faces")
+                return materialSet.faces.material!;
+            else if (m.name === "Edges")
+                return materialSet.edges.material!;
+            return m;
+        });
+
+        return mesh;
     }
 
+    /**
+     * Get a rotation quaternion for a given value
+     * @param value Dice value
+     * @returns The given rotation, or identity if not found
+     */
     getRotationForValue(value: number): THREE.Quaternion {
         const rotation = this.rotationMap.get(value);
         if (!rotation)
@@ -90,7 +122,8 @@ function registerDefinition(diceDefinition: DiceDefinition) {
 }
 
 async function loadDefinitions() {
-    definitionsJson.forEach(def => definitions.push(def));
+    const definitions = await (await fetch(MODULE.relativePath("definitions.json"))).json() as DiceDefinition[];
+    
     Hooks.callAll("simply-dice.registerDiceDefinitions");
 
     diceModels = await Promise.all(definitions.map(def => DiceModel.createModel(def)))
@@ -100,6 +133,11 @@ async function loadDefinitions() {
     }, {} as Record<string, DiceModel>));
 }
 
+/**
+ * Get a dice model for a specific denomination
+ * @param denomination Dice denomination
+ * @returns DiceModel, or null if not found
+ */
 function getDiceModel(denomination: string): DiceModel | null {
     if (!diceModels)
         return null;
@@ -107,4 +145,11 @@ function getDiceModel(denomination: string): DiceModel | null {
     return diceModels[denomination] ?? null;
 }
 
-export { DiceModel, loadDefinitions, registerDefinition, getDiceModel };
+function forEveryModel<Result>(fn: (denomination: string, model: DiceModel) => Result): Result[] {
+    if (!diceModels)
+        return [];
+
+    return Object.entries(diceModels).map(entry => fn(entry[0], entry[1]));
+}
+
+export { DiceModel, loadDefinitions, registerDefinition, getDiceModel, forEveryModel };

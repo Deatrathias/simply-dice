@@ -4,13 +4,13 @@ import wasm from "vite-plugin-wasm";
 
 export default defineConfig({
     root: ".",
-    base: `/modules/${moduleJson.id}`,
+    base: `/modules/simply-dice/`,
     publicDir: "static",
     server: {
         open: "/",
         port: 30001,
         proxy: {
-            [`^(?!/modules/${moduleJson.id}/scripts)`]: "http://localhost:30000",
+            "^(?!/modules/simply-dice)": "http://localhost:30000",
             "/socket.io": { target: "ws://localhost:30000", ws: true }
         }
     },
@@ -20,13 +20,13 @@ export default defineConfig({
     build: {
         outDir: "dist",
         emptyOutDir: true,
-        sourcemap: true,
+        sourcemap: false,
         assetsDir: "assets",
         lib: { entry: "src/main.ts", formats: ["es"], fileName: "scripts/main" },
         rolldownOptions: {
         }
     },
     plugins: [ 
-        (wasm as unknown as () => any)()
+
      ]
 });
