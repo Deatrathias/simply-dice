@@ -21,5 +21,5 @@ export function randomQuaternion(): THREE.Quaternion {
 }
 
 export function colorToStyle(color: number): string {
-    return `rgba(${(color >> 16) & 255}, ${(color >> 8) & 255}, ${color & 255}, ${(color >> 24) & 255})`;
+    return `rgba(${(color >>> 16) & 255}, ${(color >>> 8) & 255}, ${color & 255}, ${(color >>> 24) & 255})`;
 }

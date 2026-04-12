@@ -58,6 +58,8 @@ class DiceArea {
 
     private camera!: THREE.PerspectiveCamera;
 
+    hemiLight!: THREE.HemisphereLight;
+
     dirLight!: THREE.DirectionalLight;
 
     floor!: THREE.Mesh;
@@ -125,14 +127,12 @@ class DiceArea {
         this.allDice = [];
         this.renderer = new THREE.WebGPURenderer({ alpha: true, antialias: getSetting(SETTING.ANTIALIASING) });
         this.renderer.setClearColor(0, 0);
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
         this.renderer.setAnimationLoop((time) => this.update(time));
         const scenePass = TSL.pass(this.scene, this.camera);
-        this.bloomProcess = bloom(scenePass, undefined, undefined, 1);
-        this.renderPipeline = new THREE.RenderPipeline(this.renderer, this.mergeBloom(scenePass, this.bloomProcess));
+        this.bloomProcess = bloom(scenePass, 1, 0, 3);
+        this.renderPipeline = new THREE.RenderPipeline(this.renderer, TSL.vec4(TSL.acesFilmicToneMapping(this.mergeBloom(scenePass, this.bloomProcess), TSL.uniform(0.7)), scenePass.a));
         this.changeSizeSetting(getSetting(SETTING.DICE_SIZE), true);
         this.resizeArea();
 
@@ -151,9 +151,9 @@ class DiceArea {
 
     private initScene() {
         this.camera = new THREE.PerspectiveCamera(30, 0.5, 0.1, 1000);
-        const light = new THREE.HemisphereLight(new THREE.Color("white"), new THREE.Color("black"), 1);
-        this.scene.add(light);
-        this.dirLight = new THREE.DirectionalLight(new THREE.Color(1, 1, 1), 1);
+        this.hemiLight = new THREE.HemisphereLight(new THREE.Color("white"), new THREE.Color("black"), 0.5);
+        this.scene.add(this.hemiLight);
+        this.dirLight = new THREE.DirectionalLight(new THREE.Color(1, 1, 1), 0.5);
         this.dirLight.position.set(30, 30, -20);
         this.dirLight.target.position.set(0, 0, 0);
         this.changeShadowMap(parseInt(getSetting<string>(SETTING.SHADOW_MAP_RESOLUTION)));
@@ -168,7 +168,7 @@ class DiceArea {
      * Set up for the immersive environment feature
      */
     setupImmersiveEnvironment() {
-        this.scene.environmentIntensity = 0.5;
+        this.scene.environmentIntensity = 1;
         if (!game.simplyDice.textureManager)
             return;
 
@@ -183,7 +183,7 @@ class DiceArea {
         // Only refresh the canvas texture when the canvas is updated
         canvas.app?.ticker.add((t) => {
             if (this.allDice.length > 0 && getSetting<boolean>(SETTING.IMMERSIVE_ENVIRONMENT)) {
-                //this.immersiveEnvironmentUpdateDelay -= t;
+                this.immersiveEnvironmentUpdateDelay -= t;
                 if (this.immersiveEnvironmentUpdateDelay <= 0) {
                     if (!this.immersiveCanvasContext || !this.immersiveCanvasTexture)
                         this.setupImmersiveCanvas();
@@ -193,7 +193,7 @@ class DiceArea {
 
                     this.immersiveUpdateTexture = true;
                     // Delay to avoid updating on every frame
-                    //this.immersiveEnvironmentUpdateDelay += 5;
+                    this.immersiveEnvironmentUpdateDelay += 5;
                 }
             }
         });
@@ -265,7 +265,7 @@ class DiceArea {
     }
 
     changeSizeSetting(size: number, noResize: boolean = false) {
-        this.changeHeight(100 - size * 0.8, noResize);
+        this.changeHeight(60 - size * 0.4, noResize);
     }
 
     changeMaxDice(maxDice: number | null) {
@@ -315,6 +315,18 @@ class DiceArea {
         
     }
 
+    changeCanvasVisibility(visible: boolean) {
+        const canvas = this.renderer.domElement;
+        const style = this.renderer.domElement.style;
+
+        const goal = visible ? "block" : "none";
+
+        if (style.display !== goal) {
+            style.display = goal;
+            canvas.style = style.cssText;
+        }
+    }
+
     debugLine?: THREE.LineSegments;
 
     /**
@@ -323,6 +335,17 @@ class DiceArea {
      */
     private update(timestamp: DOMHighResTimeStamp) {
         this.timer.update(timestamp);
+
+        if (this.rollStack.length > 0)
+            this.doRoll();
+
+        if (this.allDice.length == 0) {
+            this.changeCanvasVisibility(false);
+            return;
+        }
+        else {
+            this.changeCanvasVisibility(true);
+        }
 
         const elapsed = this.timer.getElapsed();
         const uncaledDelta = this.timer.getDelta() / this.timer.getTimescale();
@@ -333,8 +356,7 @@ class DiceArea {
             this.allDice.findSplice(ad => ad === d);
         });
 
-        if (this.rollStack.length > 0)
-            this.doRoll();
+        
 
         //this.dirLight.intensity = canvas.colors.background.hsv[2];
 

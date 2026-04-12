@@ -3,41 +3,40 @@ import * as THREE from "three/webgpu";
 
 
 class TextureManager {
-    imageLoader: THREE.ImageLoader;
+    imageLoader: THREE.ImageBitmapLoader;
 
-    imageCache: Map<string, HTMLImageElement>;
+    imageCache: Map<string, ImageBitmap>;
 
     textureCache: Map<string, THREE.Texture>;
 
-    missingImage: HTMLImageElement;
+    missingImage!: ImageBitmap;
 
     constructor() {
-        this.imageLoader = new THREE.ImageLoader();
-        this.missingImage = this.imageLoader.load(MODULE.relativePath("textures/missing.png"));
+        THREE.Cache.enabled = true;
+        this.imageLoader = new THREE.ImageBitmapLoader();
+        this.imageLoader.load(MODULE.relativePath("textures/missing.png"), img => this.missingImage = img);
+        this.imageLoader.setOptions({ imageOrientation: "from-image", colorSpaceConversion: "default" });
         this.imageCache = new Map();
         this.textureCache = new Map();
     }
 
-    loadImage(url: string, callback?: (image: HTMLImageElement) => void, onError?: (err: unknown) => void): HTMLImageElement {
+    loadImage(url: string, callback?: (image: ImageBitmap) => void, onError?: (err: unknown) => void) {
         const existing = this.imageCache.get(url);
         if (existing) {
             if (callback)
                 callback(existing);
-            return existing;
+            return;
         }
         
-        const result = this.imageLoader.load(url, callback, undefined, (err) => {
+        this.imageLoader.load(url, callback, undefined, (err) => {
             console.error(`Could not load texture ${url}`);
             if (onError)
                 onError(err);
         });
-        this.imageCache.set(url, result);
-
-        return result;
     }
 
-    async loadImageAsync(url: string): Promise<HTMLImageElement> {
-        const result = await new Promise<HTMLImageElement>(resolve => this.loadImage(url, image => resolve(image)));
+    async loadImageAsync(url: string): Promise<ImageBitmap> {
+        const result = await new Promise<ImageBitmap>(resolve => this.loadImage(url, image => resolve(image)));
 
         return result;
     }
@@ -51,7 +50,6 @@ class TextureManager {
         }
 
         const texture = new THREE.Texture();
-        texture.flipY = false;
         if (nonColor)
             texture.colorSpace = THREE.NoColorSpace;
         else

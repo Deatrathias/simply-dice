@@ -1,8 +1,9 @@
 import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
-import { DiceModel, forEveryModel } from "dice-definition";
+import { DiceModel, DiceTextDefinition, forEveryModel } from "dice-definition";
 import { SETTING } from "settings";
 import * as TSL from "three/tsl";
 import * as THREE from "three/webgpu";
+import { colorToStyle } from "utils";
 
 type DiceMaterialConfig = {
     color?: number | null,
@@ -16,15 +17,24 @@ type DiceMaterialConfig = {
     emissiveMap?: string,
     normalMap?: string,
     normalScale: number,
-    text: {
-        font: string,
-        weight?: string,
-        color: number,
-        emissiveColor: number,
-        emissiveIntensity: number,
-        outlineColor: number,
-        symbols?: Record<string, { url: string }>
-    }
+    text: DiceMaterialTextConfig
+}
+
+type DiceMaterialTextConfig = {
+    font: string,
+    weight?: string,
+    color: number,
+    emissiveColor: number,
+    emissiveIntensity: number,
+    outlineColor: number,
+    bump: number,
+    symbols?: Record<string, DiceMaterialSymbolConfig>
+}
+
+type DiceMaterialSymbolConfig = {
+    url: string, 
+    scale?: number,
+    applyColor?: boolean
 }
 
 const defaultMaterialConfig = {
@@ -38,7 +48,8 @@ const defaultMaterialConfig = {
         color: 0xffffffff,
         emissiveColor: 0,
         emissiveIntensity: 1,
-        outlineColor: 0xff00000000
+        outlineColor: 0xff00000000,
+        bump: -10
     }
 } satisfies DiceMaterialConfig;
 
@@ -50,6 +61,9 @@ type DiceMaterialSet = {
     [K in DiceMaterialSubmat]: DiceMaterial
 }
 
+/**
+ * Class to store all the materials of one user
+ */
 class UserDiceMaterials {
     userId: string;
 
@@ -62,6 +76,9 @@ class UserDiceMaterials {
         this.materials = new Map();
     }
 
+    /**
+     * Get all the materials ready for every user
+     */
     static initMaterialsForAllUsers() {
         if (!DiceMaterial.texRenderCanvas)
             DiceMaterial.texRenderCanvas = new OffscreenCanvas(1024, 1024);
@@ -80,6 +97,9 @@ class UserDiceMaterials {
         }
     }
 
+    /**
+     * Initialize materials for the user
+     */
     initMaterials() {
         this.settingGroup = (game.settings.storage.get("user").getSetting(`${MODULE.id}.${SETTING.DICE_MATERIALS}`, this.userId).value as DiceMaterialConfigGroup | null) ?? undefined;
 
@@ -105,6 +125,10 @@ class UserDiceMaterials {
         });
     }
 
+    /**
+     * Refresh the materials based on new settings
+     * @param settings Updated settings
+     */
     updateMaterials(settings?: DiceMaterialConfigGroup) {
         this.settingGroup = settings;
 
@@ -124,6 +148,12 @@ class UserDiceMaterials {
         }
     }
 
+    /**
+     * Generate the material config for a specific die
+     * @param denomination Dice denomination
+     * @param submat Which submat to get
+     * @returns The generated DiceMaterialConfig
+     */
     getDiceMaterialConfig(denomination: string, submat: DiceMaterialSubmat): DiceMaterialConfig {
         const result: DiceMaterialConfig = foundry.utils.deepClone(defaultMaterialConfig);
 
@@ -137,6 +167,11 @@ class UserDiceMaterials {
         return result;
     }
 
+    /**
+     * Get material set for a given denomination
+     * @param denomination 
+     * @returns 
+     */
     getMaterialSet(denomination: string): DiceMaterialSet | undefined {
         return this.materials.get(denomination);
     }
@@ -151,6 +186,8 @@ class DiceMaterial {
 
     static texRenderCanvas?: OffscreenCanvas;
 
+    static intermediateCanvas?: OffscreenCanvas;
+
     submat: DiceMaterialSubmat;
 
     material: THREE.MeshStandardNodeMaterial;
@@ -159,6 +196,10 @@ class DiceMaterial {
         textColor?: THREE.Texture,
         textBump?: THREE.Texture
     };
+
+    textColorMap?: ImageBitmap;
+    
+    textMaskMap?: ImageBitmap;
 
     constructor(config: DiceMaterialConfig, userId: string, diceModel: DiceModel, submat: DiceMaterialSubmat) {
         this.config = config;
@@ -169,13 +210,17 @@ class DiceMaterial {
         this.material = new THREE.MeshStandardNodeMaterial();
 
         this.textures = {};
-        if (submat=== "faces") {
+        if (submat === "faces") {
             this.textures.textColor = new THREE.Texture();
+            this.textures.textColor.flipY = false;
+            this.textures.textColor.colorSpace = THREE.SRGBColorSpace;
             this.textures.textBump = new THREE.Texture();
+            this.textures.textBump.flipY = false;
+            this.textures.textBump.colorSpace = THREE.NoColorSpace;
         }
     }
 
-    buildMaterial(): THREE.Material {
+    buildMaterial() {
         if (!game.simplyDice.textureManager)
             throw new Error("Texture manager not created?");
 
@@ -187,8 +232,10 @@ class DiceMaterial {
             emissive: this.config.emissiveColor,
             emissiveIntensity: this.config.emissiveIntensity,
             normalScale: new THREE.Vector2(this.config.normalScale, this.config.normalScale) });
+            
         let colorNode = TSL.color(baseColor);
         this.material.colorNode = colorNode;
+
         if (this.config.colorMap) {
             const tex = game.simplyDice.textureManager.loadTexture(this.config.colorMap);
             this.material.colorNode = TSL.texture(tex).mul(colorNode);
@@ -215,102 +262,205 @@ class DiceMaterial {
         else
             this.material.normalMap = null;
 
-        if (this.submat === "faces")
-            this.generateTextTexture();
+        // Generating text labels
+        if (this.submat === "faces") {
+            const textConfig = this.config.text;
+            this.generateTextTexture().then(texs => {
+                if (texs.length == 2)
+                    this.updateTextures(texs[0], texs[1]);
+            });
+
+            const textNode = TSL.texture(this.textures.textColor);
+            this.material.colorNode = TSL.blendColor(this.material.colorNode, textNode);
+        
+            // For emissive, we create an emissive node using the material's emissive values and combine with the text's emissive
+            if (textConfig.emissiveColor !== 0 && textConfig.emissiveIntensity !== 0) {
+                let emissiveNode: THREE.Node<"vec3"> = TSL.color(this.material.emissive).rgb;
+                if (this.material.emissiveMap)
+                    emissiveNode = TSL.texture(this.material.emissiveMap).rgb.mul(emissiveNode);
+                emissiveNode = emissiveNode.mul(this.material.emissiveIntensity);
+                this.material.emissiveNode = TSL.color(textConfig.emissiveColor).mul(textConfig.emissiveIntensity).mul(textNode.a).add(emissiveNode);
+            }
+            else
+                this.material.emissiveNode = null;
+
+            const bumpTexNode = TSL.texture(this.textures.textBump);
+            const bumpNode = TSL.bumpMap(bumpTexNode.a, TSL.vec2(textConfig.bump, textConfig.bump));
+
+            // Combining normal with bump
+            const normalNode = TSL.normalMap((this.material.normalMap ? TSL.texture(this.material.normalMap).rgb : TSL.color(0.5, 0.5, 1)), TSL.vec2(this.material.normalScale));
+            // We use a cast because Typescript declaration is lacking
+            this.material.normalNode = TSL.normalize(TSL.mix(normalNode as unknown as THREE.Node<"vec3">, bumpNode as unknown as THREE.Node<"vec3">, bumpTexNode.a));
+        }
 
         this.material.needsUpdate = true;
-        return this.material;
     }
 
-    generateTextTexture() {
-        if (!DiceMaterial.texRenderCanvas)
-            return;
-
-        const text = this.diceModel.definition.text;
-        if (!text || !text.items || !text.items.length)
-            return;
-
-        const w = DiceMaterial.texRenderCanvas.width;
-        const h = DiceMaterial.texRenderCanvas.height;
-
-        const textConfig = this.config.text;
-
-        const context = DiceMaterial.texRenderCanvas.getContext("2d");
+    async generateTextTexture(): Promise<ImageBitmap[]> {
+        const textCanvas = DiceMaterial.texRenderCanvas;
+        if (!textCanvas)
+            return [];
+    
+        const definition = this.diceModel.definition.text;
+        const config = this.config.text;;
+    
+        if (!definition.items || !definition.items.length)
+            return [];
+    
+        const w = textCanvas.width;
+        const h = textCanvas.height;
+        const hratio = h / 1024;
+    
+        const symbolMap = new Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }>();
+        if (config.symbols) {
+            await Promise.all(Object.entries(config.symbols).map(entry => new Promise<void>((resolve) => {
+                const image = new Image();
+                image.src = entry[1].url;
+                image.onload = () => {
+                    symbolMap.set(entry[0], { image, symbol: entry[1] }); 
+                    resolve(); 
+                };
+                image.onerror = () => { 
+                    resolve();
+                }
+                image.decode();
+                globalThis.setTimeout(resolve, 5000);
+            })));
+        }
+    
+        const context = textCanvas.getContext("2d");
         if (!context)
-            return;
-
+            return [];
+    
         context.clearRect(0, 0, w, h);
         context.reset();
-        
-        context.font = `${textConfig.weight ?? ""} ${this.diceModel.definition.text.height * h}px ${textConfig.font}`;
+    
+        const textHeight = definition.height * hratio;
+        context.font = `${config.weight ?? ""} ${textHeight}px ${config.font}`;
         context.textAlign = "center";
-        context.textBaseline = "middle";
         context.lineCap = "round";
-        context.fillStyle = new THREE.Color(textConfig.color).getStyle();
-        context.strokeStyle = new THREE.Color(textConfig.outlineColor).getStyle();
+        context.fillStyle = colorToStyle(config.color);
+        context.strokeStyle = colorToStyle(config.outlineColor);
         context.lineWidth = 5;
 
-        for (const textItem of this.diceModel.definition.text.items) {
-            context.resetTransform();
-            context.translate(textItem.position[0] * w, (textItem.position[1]) * h);
-            if (textItem.rotation)
-                context.rotate(Math.toRadians(textItem.rotation));
-
-            context.globalAlpha = ((textConfig.outlineColor >>> 24) & 255) / 255;
-            context.strokeText(textItem.label, 0, 0);
-            context.globalAlpha = ((textConfig.color >>> 24) & 255) / 255;
-            context.fillText(textItem.label, 0, 0);
-        }
-
-        const textMap = this.textures.textColor!;
-        textMap.image = context.canvas.transferToImageBitmap();
-        textMap.flipY = false;
-        textMap.needsUpdate = true,
-        textMap.colorSpace = THREE.SRGBColorSpace;
-        const texNode = TSL.texture(textMap);
-        
-        this.material.colorNode = TSL.blendColor(this.material.colorNode!, texNode);
-        
-        // For emissive, we create an emissive node using the material's emissive values and combine with the text's emissive
-        if (textConfig.emissiveColor !== 0 && textConfig.emissiveIntensity !== 0) {
-            let emissiveNode: THREE.Node<"vec3"> = TSL.color(this.material.emissive).rgb;
-            if (this.material.emissiveMap)
-                emissiveNode = TSL.texture(this.material.emissiveMap).rgb.mul(emissiveNode);
-            emissiveNode = emissiveNode.mul(this.material.emissiveIntensity);
-            this.material.emissiveNode = TSL.color(textConfig.emissiveColor).mul(textConfig.emissiveIntensity).mul(TSL.texture(textMap).a).add(emissiveNode);
-        }
-        else
-            this.material.emissiveNode = null;
-
-        // Creation of a bump map
+        this.drawText(context, definition, config, symbolMap, false);
+    
+        const textColorMap = textCanvas.transferToImageBitmap();
+    
+        // Creation of a mask map
         context.resetTransform();
         context.globalAlpha = 1;
         context.clearRect(0, 0, w, h);
         context.fillStyle = "white";
+    
+        this.drawText(context, definition, config, symbolMap, true);
+    
+        const textMaskMap = textCanvas.transferToImageBitmap();
 
-        for (const textItem of this.diceModel.definition.text.items) {
+        return [textColorMap, textMaskMap];
+    }
+
+    drawText(context: OffscreenCanvasRenderingContext2D, definition: DiceTextDefinition, config: DiceMaterialTextConfig, symbolMap: Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }>, mask: boolean) {
+        const textCanvas = DiceMaterial.texRenderCanvas!;
+        const wratio = textCanvas.width / 1024;
+        const hratio = textCanvas.height / 1024;
+
+        const textMaxWidth = definition.maxWidth * wratio;
+
+        context.shadowColor = colorToStyle(config.outlineColor);
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
+        context.shadowBlur = 5;
+        context.globalAlpha = 1;
+
+        for (const textItem of definition.items) {
             context.resetTransform();
-            context.translate(textItem.position[0] * w, (textItem.position[1]) * h);
+    
+            context.translate(textItem.position[0] * wratio, textItem.position[1] * hratio);
             if (textItem.rotation)
                 context.rotate(Math.toRadians(textItem.rotation));
+    
+            const symbolElement = symbolMap.get(textItem.label);
+            if (symbolElement) {
+                const symbol = symbolElement.image;
 
-            context.fillText(textItem.label, 0, 0);
+                const scale = symbolElement.symbol.scale ?? 1;
+                let width = scale * symbol.naturalWidth * definition.height / symbol.naturalHeight;
+                let height = scale * definition.height;
+    
+                if (width > definition.maxWidth) {
+                    width = definition.maxWidth;
+                    height = definition.maxWidth * symbol.naturalHeight / symbol.naturalWidth;
+                }
+                
+                context.drawImage(symbol, 0, 0, symbol.naturalWidth, symbol.naturalHeight, -width / 2, -height / 2, width, height);
+
+                // For applying color on the image
+                if (symbolElement.symbol.applyColor) {
+                    if (!DiceMaterial.intermediateCanvas)
+                        DiceMaterial.intermediateCanvas = new OffscreenCanvas(width, height);
+                    DiceMaterial.intermediateCanvas.width = width;
+                    DiceMaterial.intermediateCanvas.height = height;
+                    const intermediateContext = DiceMaterial.intermediateCanvas.getContext("2d")!;
+
+                    // Paint the image on an intermediate canvas first and cover it with the color
+                    intermediateContext.globalCompositeOperation = "source-over";
+                    intermediateContext.drawImage(symbol, 0, 0, symbol.naturalWidth, symbol.naturalHeight, 0, 0, width, height);
+                    intermediateContext.globalCompositeOperation = "source-atop";
+                    intermediateContext.fillStyle = colorToStyle(config.color)
+                    intermediateContext.fillRect(0, 0, width, height);
+
+                    context.save();
+
+                    // Paint the intermediate canvas on top of the image with multiply
+                    context.shadowColor = "rgba(0, 0, 0, 0)";
+                    context.globalCompositeOperation = "multiply";
+                    context.drawImage(DiceMaterial.intermediateCanvas, 0, 0, width, height, -width / 2, -height / 2, width, height);
+
+                    context.restore();
+                }
+            }
+            else {
+                const metrics = context.measureText(textItem.label);
+                context.translate(0, metrics.actualBoundingBoxAscent / 2 - metrics.actualBoundingBoxDescent / 2);
+    
+                if (!mask) {
+                    context.globalAlpha = ((config.color >>> 24) & 255) / 255;
+                }
+                context.fillText(textItem.label, 0, 0, textMaxWidth);
+            }
+        }
+    }
+
+    updateTextures(textColorMap: ImageBitmap, textMaskMap: ImageBitmap) {
+        // If the texture was not updated since, we need to close the previous images manually
+        if (this.textColorMap)
+            this.textColorMap.close();
+        if (this.textMaskMap)
+            this.textMaskMap.close();
+
+        if (this.textures.textColor) {
+            this.textures.textColor.image = textColorMap;
+            this.textColorMap = textColorMap;
+            this.textures.textColor.needsUpdate = true;
+            this.textures.textColor.onUpdate = (t) => {
+                textColorMap.close?.();
+                t.onUpdate = null;
+            };
         }
 
-        const bumpMap = this.textures.textBump!;
-        bumpMap.image = context.canvas.transferToImageBitmap();
-        bumpMap.flipY = false;
-        bumpMap.needsUpdate = true,
-        bumpMap.colorSpace = THREE.NoColorSpace;
-        const bumpNode = TSL.bumpMap(TSL.oneMinus(TSL.texture(bumpMap)), TSL.vec2(10, 10));
-
-        // Combining normal with bump
-        const normalNode = TSL.normalMap((this.material.normalMap ? TSL.texture(this.material.normalMap).rgb : TSL.color(0.5, 0.5, 1)), TSL.vec2(this.material.normalScale));
-        // We use a cast because Typescript declaration is lacking
-        this.material.normalNode = TSL.normalize(TSL.mix(normalNode as unknown as THREE.Node<"vec3">, bumpNode as unknown as THREE.Node<"vec3">, TSL.texture(bumpMap).a));
+        if (this.textures.textBump) {
+            this.textures.textBump.image = textMaskMap;
+            this.textMaskMap = textMaskMap;
+            this.textures.textBump.needsUpdate = true;
+            this.textures.textBump.onUpdate = (t) => {
+                textMaskMap.close?.();
+                t.onUpdate = null;
+            };
+        }
     }
 }
 
 
 export { DiceMaterial, UserDiceMaterials }
-export type { DiceMaterialConfig, DiceMaterialConfigGroup, DiceMaterialSet }
+export type { DiceMaterialConfig, DiceMaterialTextConfig, DiceMaterialConfigGroup, DiceMaterialSet }

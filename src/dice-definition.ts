@@ -10,14 +10,17 @@ type DiceDefinition = {
     modelUrl: string,
     colliderUrl: string
     rotationForValue: Record<string, THREE.QuaternionTuple>,
-    text: {
-        height: number,
-        items: {
-            label: string,
-            position: THREE.Vector2Tuple,
-            rotation?: number
-        }[]
-    }
+    text: DiceTextDefinition
+};
+
+type DiceTextDefinition = {
+    height: number,
+    maxWidth: number,
+    items: {
+        label: string,
+        position: THREE.Vector2Tuple,
+        rotation?: number
+    }[]
 };
 
 const gltfLoader = new GLTFLoader();
@@ -153,3 +156,4 @@ function forEveryModel<Result>(fn: (denomination: string, model: DiceModel) => R
 }
 
 export { DiceModel, loadDefinitions, registerDefinition, getDiceModel, forEveryModel };
+export type { DiceTextDefinition };
