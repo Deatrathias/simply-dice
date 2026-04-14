@@ -72,6 +72,14 @@ class DiceArea {
 
     floor!: THREE.Mesh;
 
+    framerateCap: number | null;
+
+    timeUntilFrame: number;
+
+    lastUpdateTime: number;
+
+    deltaTimeAccumulator: number;
+
     private allDice: DiceObject[];
 
     private nextRollId: number = 0;
@@ -140,6 +148,10 @@ class DiceArea {
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
         this.renderer.shadowMap.transmitted = true;
         this.renderer.setAnimationLoop((time) => this.update(time));
+        this.framerateCap = getSetting(SETTING.MAX_FRAMERATE);
+        this.timeUntilFrame = 0;
+        this.lastUpdateTime = 0;
+        this.deltaTimeAccumulator = 0;
         const scenePass = TSL.pass(this.scene, this.camera);
         this.bloomStrength = TSL.uniform(1);
         this.bloomThreshold = TSL.uniform(5);
@@ -341,6 +353,12 @@ class DiceArea {
         
     }
 
+    changeFramerateCap(cap: number | null) {
+        this.framerateCap = cap;
+        this.timeUntilFrame = 0;
+
+    }
+
     changeCanvasVisibility(visible: boolean) {
         const canvas = this.renderer.domElement;
         const style = this.renderer.domElement.style;
@@ -375,6 +393,18 @@ class DiceArea {
     private update(timestamp: DOMHighResTimeStamp) {
         this.timer.update(timestamp);
 
+        this.deltaTimeAccumulator += this.timer.getDelta();
+
+        if (this.framerateCap != null) {
+            this.timeUntilFrame -= timestamp - this.lastUpdateTime;
+            this.lastUpdateTime = timestamp;
+
+            if (this.timeUntilFrame > 0)
+                return;
+
+            this.timeUntilFrame += 1000 / this.framerateCap;
+        }
+
         if (this.rollStack.length > 0)
             this.doRoll();
 
@@ -387,7 +417,7 @@ class DiceArea {
         }
 
         const elapsed = this.timer.getElapsed();
-        const uncaledDelta = this.timer.getDelta() / this.timer.getTimescale();
+        const uncaledDelta = this.deltaTimeAccumulator / this.timer.getTimescale();
         this.allDice.forEach(d => d.updateSimulationGraphics(elapsed, uncaledDelta));
         this.allDice.filter(d => !d.isAlive).forEach(d => { 
             WORKER.removeDice(d.id);
@@ -405,6 +435,8 @@ class DiceArea {
             playDiceSound();
             this.collisionsSet = this.collisionsSet.slice({ start: elapsed });
         }
+
+        this.deltaTimeAccumulator = 0;
     }
 
     renderDebugLines(buffers: { vertices: Float32Array, colors: Float32Array }) {
@@ -416,10 +448,24 @@ class DiceArea {
         this.debugLine.geometry.setAttribute("color", new THREE.BufferAttribute(buffers.colors, 4));
     }
 
-    async onEvaluate(wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, options?: EvaluateRollParams) {
+    /**
+     * On roll evaluate wrapper
+     * @param wrapped original function
+     * @param roll Evaluated roll
+     * @param options Evaluated roll options
+     * @returns Rolled
+     */
+    async onEvaluate(wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, roll: Roll, options?: EvaluateRollParams): Promise<Rolled<Roll>> {
+        const diceToRoll = [];
+        if (this.can3dRoll(roll)) {
+            diceToRoll.push(...roll.dice.filter(d => !(d as any)._simplyDiceRolled));
+            diceToRoll.forEach(d => (d as any)._simplyDiceRolled = true);
+        }
+
         const result = await wrapped(options);
-        if (game.simplyDice.diceArea?.can3dRoll(result)) {
-            const promise = game.simplyDice.diceArea.rollAndWait(result.dice);
+
+        if (diceToRoll.length > 0) {
+            const promise = this.rollAndWait(diceToRoll);
             if (getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
                 await promise;
             result.options["simplyDice-noSound"] = true;
@@ -440,7 +486,7 @@ class DiceArea {
         if (!dice)
             return false;
 
-        if (dice.find(d => (d.number ?? 0) > 0 && getDiceModel(d.denomination) !== null))
+        if (dice.find(d => (d.number ?? 0) > 0 && getDiceModel(d.denomination) !== null && !(d as any)._simplyDiceRolled))
             return true;
         return false;
     }

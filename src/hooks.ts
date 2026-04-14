@@ -19,9 +19,15 @@ Hooks.on("init", () => {
     loadDefinitions();
 
     const libWrapper = (globalThis as any).libWrapper;
-    libWrapper.register(MODULE.id, "foundry.dice.Roll.prototype._evaluate", 
-        async (wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, options?: EvaluateRollParams) => game.simplyDice.diceArea?.onEvaluate(wrapped, options));
+    libWrapper.register(MODULE.id, "foundry.dice.Roll.prototype._evaluate", _evaluateWrapped);
 });
+
+async function _evaluateWrapped(this: Roll, wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, options?: EvaluateRollParams): Promise<Rolled<Roll>> {
+    if (!game.simplyDice.diceArea)
+        return wrapped(options);
+
+    return game.simplyDice.diceArea.onEvaluate(wrapped, this, options);
+}
 
 Hooks.on("setup", () => {
     initTextureManager();

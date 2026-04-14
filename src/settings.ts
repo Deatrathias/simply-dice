@@ -13,6 +13,7 @@ export const SETTING = {
     DICE_MATERIALS: "diceMaterials",
     DISABLE_FOR_USER: "disableForUser",
     // Client
+    MAX_FRAMERATE: "maxFramerate",
     DICE_SIZE: "diceSize",
     MAX_DICE_ON_SCREEN: "maxDiceOnScreen",
     SHADOWS: "shadows",
@@ -36,6 +37,8 @@ export function registerSettings() {
     registerSetting({ id: SETTING.THROW_IMPULSE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0, max: 100 }), default: 5, scope: "world", 
         onChange: value => WORKER.updateSettings({ throwImpulse: value as number })});
     registerSetting({ id: SETTING.DISABLE_FOR_USER, type: Boolean, default: false, scope: "user" });
+    registerSetting({ id: SETTING.MAX_FRAMERATE, type: new foundry.data.fields.NumberField({ nullable: true, min: 0 }), default: 60, scope: "client",
+        onChange: value => game.simplyDice.diceArea?.changeFramerateCap(value as number | null) });
     registerSetting({ id: SETTING.DICE_SIZE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0, max: 100, step: 1 }), default: 50, scope: "client", 
         onChange: value => game.simplyDice.diceArea?.changeSizeSetting(value as number)});
     registerSetting({ id: SETTING.MAX_DICE_ON_SCREEN, type: new foundry.data.fields.NumberField({ nullable: true, min: 1 }), default: 30, scope: "client", 

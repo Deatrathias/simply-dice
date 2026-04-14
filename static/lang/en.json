@@ -13,6 +13,8 @@
             "ThrowImpulseHint": "Intensity of the impulse at which dice are thrown.",
             "DisableForUser": "Disable For User",
             "DisableForUserHint": "Do not show 3D dice for your rolls. Other users' rolls are still played.",
+            "MaxFramerate": "Max Framerate",
+            "MaxFramerateHint": "Framerate cap for the 3D dice canvas. Leave empty for uncapped.",
             "DiceSize": "Dice Size",
             "DiceSizeHint": "The size of the dice on screen.",
             "MaxDiceOnScreen": "Maximum Dice on Screen",
