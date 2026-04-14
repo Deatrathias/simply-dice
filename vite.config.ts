@@ -5,6 +5,7 @@ import wasm from "vite-plugin-wasm";
 export default defineConfig({
     root: ".",
     publicDir: "static",
+    base: "",
     server: {
         port: 30001,
         proxy: {
