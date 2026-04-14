@@ -42,7 +42,8 @@ Hooks.on("ready", () => {
         const debugWindow = new foundry.applications.api.DialogV2({
             buttons: [{ action: "close", label: "Close" }],
             content: `<div class="form-group"><input type="number" name="x" value="0" /><input type="number" name="y" value="0" /><input type="number" name="z" value="0" />
-            </div><button type="button" data-action="rotate">Rotate</button><button type="button" data-action="reset">Reset</button><input type="range" name="fov" min="10" max="180" value="40" />`,
+            </div><button type="button" data-action="rotate">Rotate</button><button type="button" data-action="reset">Reset</button><input type="range" name="fov" min="10" max="180" value="40" />
+            <label>Dir light</label><input type="range" name="dirLight" min="0" max="10" value="1" step="0.1" /><label>Hemi light</label><input type="range" name="hemiLight" min="0" max="18" value="1" step="0.1" />`,
             actions: {
                 "rotate": (event, target) => {
                     const form = (target as HTMLButtonElement).form;
@@ -54,9 +55,16 @@ Hooks.on("ready", () => {
             }
         });
         debugWindow.render(true).then(() => {
-            [...debugWindow.element.getElementsByTagName("input")].find(i => i.name === "fov")?.addEventListener("input", (event) => { 
+            const inputs = [...debugWindow.element.getElementsByTagName("input")];
+            inputs.find(i => i.name === "fov")?.addEventListener("input", (event) => { 
                 const slider = event.target as HTMLInputElement;
                 game.simplyDice.diceArea?.changeHeight(parseInt(slider.value));
+            });
+            inputs.find(i => i.name === "dirLight")?.addEventListener("input", (event) => {
+                game.simplyDice.diceArea!.dirLight.intensity = parseFloat((event.target as HTMLInputElement).value);
+            });
+            inputs.find(i => i.name === "hemiLight")?.addEventListener("input", (event) => {
+                game.simplyDice.diceArea!.hemiLight.intensity = parseFloat((event.target as HTMLInputElement).value);
             });
         });
     }
@@ -76,5 +84,10 @@ Hooks.on("updateSetting", (setting: Setting, changed: object, options: Partial<D
     if (setting.key !== `${MODULE.id}.${SETTING.DICE_MATERIALS}` || !setting.user)
         return;
 
-    game.simplyDice.userMaterials?.get(setting.user)?.updateMaterials((setting.value ?? undefined) as DiceMaterialConfigGroup);
+    game.simplyDice.userMaterials?.get(setting.user)?.updateMaterials((setting.value ?? undefined) as DiceMaterialConfigGroup | undefined);
+});
+
+Hooks.on("updateUser", (user: User, changed) => {
+    if (changed.color)
+        game.simplyDice.userMaterials?.get(user.id)?.updateMaterials();
 });

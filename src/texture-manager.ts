@@ -11,6 +11,10 @@ class TextureManager {
 
     missingImage!: ImageBitmap;
 
+    white: THREE.Texture;
+
+    blue: THREE.Texture;
+
     constructor() {
         THREE.Cache.enabled = true;
         this.imageLoader = new THREE.ImageBitmapLoader();
@@ -18,6 +22,10 @@ class TextureManager {
         this.imageLoader.setOptions({ imageOrientation: "from-image", colorSpaceConversion: "default" });
         this.imageCache = new Map();
         this.textureCache = new Map();
+        this.white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]));
+        this.white.needsUpdate = true;
+        this.blue = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]));
+        this.blue.needsUpdate = true;
     }
 
     loadImage(url: string, callback?: (image: ImageBitmap) => void, onError?: (err: unknown) => void) {

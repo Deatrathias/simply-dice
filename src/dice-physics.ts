@@ -165,13 +165,13 @@ class PhysicsArea {
                 if (!obj)
                     continue;
 
-                const impulse = toRotation.rotateVector({ x: -this.throwImpulse - random(rng) * (this.throwImpulse / 5), y: -this.throwImpulse / 2, z: 0 }) as RAPIER.Vector;
+                const impulse = toRotation.rotateVector({ x: -this.throwImpulse - random(rng) * (this.throwImpulse / 5), y: 0, z: 0 }) as RAPIER.Vector;
                 const offsetRotation = toRotation.mul(Quaternion.fromAxisAngle([0, 1, 0], ((count % 3) - 1) * Math.PI / 6));
                 const offsetVector = offsetRotation.rotateVector({ x: (-2 - Math.floor((count + 2) / 3)), y: 0, z: 0 }) as RAPIER.Vector;
 
                 const startRotation = new Quaternion(random(rng) * 2 - 1, random(rng) * 2 - 1, random(rng) * 2 - 1, random(rng) * 2 - 1).normalize();
                 const dice = new SimulatedDice(this, diceTerm.id, simulationData.startTime, baseStepCount, maxStepCount, obj, addVectors(centerStartPoint, offsetVector), startRotation);
-                dice.rigidbody.applyImpulse(impulse, true);
+                dice.rigidbody.applyImpulseAtPoint(scaleVector(impulse, dice.rigidbody.mass()), addVectors(dice.rigidbody.translation(), {x:0, y:0.1, z:0}), true);
                 simulating.push(dice);
                 count++;
             }
@@ -205,7 +205,7 @@ class PhysicsArea {
             simulating.forEach(d => d.recordStep());
 
             // If every body is sleeping, end the simulation early
-            if (!simulating.find(d => !d.rigidbody.isSleeping() && d.inactiveSteps < 10)) {
+            if (!simulating.find(d => !d.rigidbody.isSleeping() && d.inactiveSteps < 30)) {
                 maxStepCount = i + 1;
                 break;
             }
@@ -238,6 +238,7 @@ class PhysicsArea {
         } satisfies SimulationCompleteMessage, { transfer: buffersToSend });
 
         simulatedDices.push(...simulating);
+        //this.debugRender();
     }
 
     removeDice(id: number) {

@@ -19,7 +19,8 @@ type DiceTextDefinition = {
     items: {
         label: string,
         position: THREE.Vector2Tuple,
-        rotation?: number
+        rotation?: number,
+        distinguisher?: boolean
     }[]
 };
 
@@ -54,8 +55,8 @@ class DiceModel {
      */
     static async createModel(definition: DiceDefinition): Promise<DiceModel> {
         // Send message to load collider on the physics worker
-        WORKER.loadObj(definition.denomination, definition.colliderUrl);
-
+        WORKER.loadObj(definition.denomination, new URL(definition.colliderUrl, document.baseURI).toString());
+        
         // Load model
         const modelPromise = new Promise<THREE.Mesh>((resolve, reject) =>
          gltfLoader.load(definition.modelUrl, (gltf) => {
@@ -125,7 +126,7 @@ function registerDefinition(diceDefinition: DiceDefinition) {
 }
 
 async function loadDefinitions() {
-    const definitions = await (await fetch(MODULE.relativePath("definitions.json"))).json() as DiceDefinition[];
+    const definitions = await (await fetch(MODULE.relativePath("data/definitions.json"))).json() as DiceDefinition[];
     
     Hooks.callAll("simply-dice.registerDiceDefinitions");
 

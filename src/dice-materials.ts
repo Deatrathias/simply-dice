@@ -32,7 +32,7 @@ type DiceMaterialTextConfig = {
 }
 
 type DiceMaterialSymbolConfig = {
-    url: string, 
+    url: string,
     scale?: number,
     applyColor?: boolean
 }
@@ -48,7 +48,7 @@ const defaultMaterialConfig = {
         color: 0xffffffff,
         emissiveColor: 0,
         emissiveIntensity: 1,
-        outlineColor: 0xff00000000,
+        outlineColor: 0xff000000,
         bump: -10
     }
 } satisfies DiceMaterialConfig;
@@ -82,7 +82,7 @@ class UserDiceMaterials {
     static initMaterialsForAllUsers() {
         if (!DiceMaterial.texRenderCanvas)
             DiceMaterial.texRenderCanvas = new OffscreenCanvas(1024, 1024);
-        
+
         if (!game.simplyDice.userMaterials)
             game.simplyDice.userMaterials = new Map();
 
@@ -120,7 +120,7 @@ class UserDiceMaterials {
                 materialSet.edges.config = configEdges;
             }
 
-            materialSet.faces.buildMaterial(); 
+            materialSet.faces.buildMaterial();
             materialSet.edges.buildMaterial();
         });
     }
@@ -157,12 +157,23 @@ class UserDiceMaterials {
     getDiceMaterialConfig(denomination: string, submat: DiceMaterialSubmat): DiceMaterialConfig {
         const result: DiceMaterialConfig = foundry.utils.deepClone(defaultMaterialConfig);
 
-        if (!this.settingGroup)
-            return result;
+        if (this.settingGroup) {
+            foundry.utils.mergeObject(result, this.settingGroup.global, { recursive: true });
+            foundry.utils.mergeObject(result, this.settingGroup[denomination], { recursive: true });
+            foundry.utils.mergeObject(result, this.settingGroup[`${denomination}.${submat}`], { recursive: true });
+        }
 
-        foundry.utils.mergeObject(result, this.settingGroup.global, { recursive: true });
-        foundry.utils.mergeObject(result, this.settingGroup[denomination], { recursive: true });
-        foundry.utils.mergeObject(result, this.settingGroup[`${denomination}.${submat}`], { recursive: true });
+        if (result.color === null || result.color === undefined) {
+            const userColor = game.users.get(this.userId)?.color;
+            result.color = userColor?.valueOf() ?? 0xffffffff;
+
+            if (submat === "faces" && userColor && userColor.hsl[2] > 0.5) {
+                // Make text black for bright color users
+                const outline = result.text.outlineColor;
+                result.text.outlineColor = result.text.color;
+                result.text.color = outline;
+            }
+        }
 
         return result;
     }
@@ -190,78 +201,168 @@ class DiceMaterial {
 
     submat: DiceMaterialSubmat;
 
-    material: THREE.MeshStandardNodeMaterial;
+    material!: THREE.MeshStandardNodeMaterial;
 
     textures: {
         textColor?: THREE.Texture,
-        textBump?: THREE.Texture
+        textMask?: THREE.Texture
     };
 
     textColorMap?: ImageBitmap;
-    
+
     textMaskMap?: ImageBitmap;
+
+    colorNode!: THREE.UniformNode<"color", THREE.Color>;
+
+    colorMapNode!: THREE.TextureNode;
+
+    metalnessNode!: THREE.UniformNode<"float", number>;
+
+    metalnessMapNode!: THREE.TextureNode;
+
+    roughnessNode!: THREE.UniformNode<"float", number>;
+
+    roughnessMapNode!: THREE.TextureNode;
+
+    emissiveColorNode!: THREE.UniformNode<"color", THREE.Color>;
+
+    emissiveIntensityNode!: THREE.UniformNode<"float", number>
+
+    emissiveMapNode!: THREE.TextureNode;
+
+    normalMapNode!: THREE.TextureNode;
+
+    normalScaleNode!: THREE.UniformNode<"float", number>;
+
+    textEmissiveNode!: THREE.UniformNode<"color", THREE.Color>;
+
+    textEmissiveIntensityNode!: THREE.UniformNode<"float", number>;
+
+    textBumpNode!: THREE.UniformNode<"float", number>;
+
+    tc?: THREE.TextureNode;
+    tm?: THREE.TextureNode;
 
     constructor(config: DiceMaterialConfig, userId: string, diceModel: DiceModel, submat: DiceMaterialSubmat) {
         this.config = config;
         this.userId = userId;
         this.diceModel = diceModel;
         this.submat = submat;
-        
-        this.material = new THREE.MeshStandardNodeMaterial();
 
         this.textures = {};
         if (submat === "faces") {
             this.textures.textColor = new THREE.Texture();
             this.textures.textColor.flipY = false;
             this.textures.textColor.colorSpace = THREE.SRGBColorSpace;
-            this.textures.textBump = new THREE.Texture();
-            this.textures.textBump.flipY = false;
-            this.textures.textBump.colorSpace = THREE.NoColorSpace;
+            this.textures.textMask = new THREE.Texture();
+            this.textures.textMask.flipY = false;
+            this.textures.textMask.colorSpace = THREE.NoColorSpace;
         }
+        this.initMaterial();
+    }
+
+    createWhiteTexture(): THREE.Texture {
+        const result = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]));
+        result.needsUpdate = true;
+        return result;
+    }
+
+    initMaterial() {
+        this.material = new THREE.MeshStandardNodeMaterial({ side: THREE.FrontSide });
+
+        const black = new THREE.Color(0, 0, 0);
+        this.colorNode = TSL.uniform(black);
+        this.colorMapNode = TSL.texture().setName("colorMap");
+
+        this.material.colorNode = TSL.mul(this.colorNode.rgb, this.colorMapNode);
+
+        this.metalnessNode = TSL.uniform(0);
+        this.metalnessMapNode = TSL.texture().setName("metalnessMap");
+        this.material.metalnessNode = TSL.mul(this.metalnessNode, this.metalnessMapNode);
+
+        this.roughnessNode = TSL.uniform(1);
+        this.roughnessMapNode = TSL.texture().setName("roughnessMap");
+        this.material.roughnessNode = TSL.mul(this.roughnessNode, this.roughnessMapNode);
+
+        this.emissiveColorNode = TSL.uniform(black);
+        this.emissiveIntensityNode = TSL.uniform(1);
+        this.emissiveMapNode = TSL.texture().setName("emissiveMap");
+        this.material.emissiveNode = TSL.mul(this.emissiveColorNode.rgb, this.emissiveIntensityNode, this.emissiveMapNode);
+
+        this.normalMapNode = TSL.texture(game.simplyDice.textureManager?.blue.clone());
+        this.normalScaleNode = TSL.uniform(1);
+        this.material.normalNode = TSL.normalMap(this.normalMapNode.rgb, TSL.vec2(this.normalScaleNode, this.normalScaleNode));
+
+        this.material.opacityNode = TSL.userData("disappear", "float");
+
+        if (this.submat === "faces") {
+            this.material.colorNode = TSL.blendColor(this.material.colorNode, TSL.texture(this.textures.textColor));
+
+            // For emissive, we create an emissive node using the material's emissive values and combine with the text's emissive
+            this.textEmissiveNode = TSL.uniform(black);
+            this.textEmissiveIntensityNode = TSL.uniform(1);
+
+            this.material.emissiveNode = TSL.mul(this.textEmissiveNode.rgb, this.textEmissiveIntensityNode, TSL.texture(this.textures.textMask).a).add(this.material.emissiveNode as THREE.Node<"vec3">);
+
+            this.textBumpNode = TSL.uniform(-10);
+            const bumpNode = TSL.bumpMap(TSL.texture(this.textures.textMask), TSL.vec2(this.textBumpNode, this.textBumpNode));
+
+            // Combine the existing normal map with the bump
+            // We use a cast because Typescript declaration is lacking
+            this.material.normalNode = TSL.normalize(TSL.mix(this.material.normalNode as THREE.Node<"vec3">, bumpNode as unknown as THREE.Node<"vec3">, TSL.texture(this.textures.textMask).a));
+        }
+        this.material.castShadowNode = TSL.vec4(0, 0, 0, this.material.opacityNode);
     }
 
     buildMaterial() {
         if (!game.simplyDice.textureManager)
             throw new Error("Texture manager not created?");
 
-        const baseColor = this.config.color ?? ((game.users.get(this.userId)?.color.valueOf() ?? 0xffffffff) | 0xff000000);
+        this.colorNode.value = new THREE.Color(this.config.color ?? 0xff000000);
+        if (this.config.colorMap)
+            this.colorMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.colorMap);
+        else
+            this.colorMapNode.value = game.simplyDice.textureManager.white;
 
-        this.material.setValues({ 
-            metalness: this.config.metalness, 
-            roughness: this.config.roughness,
-            emissive: this.config.emissiveColor,
-            emissiveIntensity: this.config.emissiveIntensity,
-            normalScale: new THREE.Vector2(this.config.normalScale, this.config.normalScale) });
-            
-        let colorNode = TSL.color(baseColor);
-        this.material.colorNode = colorNode;
-
-        if (this.config.colorMap) {
-            const tex = game.simplyDice.textureManager.loadTexture(this.config.colorMap);
-            this.material.colorNode = TSL.texture(tex).mul(colorNode);
-        }
-        //this.material.opacity = ((baseColor >>> 24) & 0xff) / 255;
-
+        this.metalnessNode.value = this.config.metalness;
         if (this.config.metalnessMap)
-            this.material.metalnessMap = game.simplyDice.textureManager.loadTexture(this.config.metalnessMap, undefined, true);
+            this.metalnessMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.metalnessMap);
         else
-            this.material.metalnessMap = null;
-        
+            this.metalnessMapNode.value = game.simplyDice.textureManager.white;
+
+        this.roughnessNode.value = this.config.roughness;
         if (this.config.roughnessMap)
-            this.material.roughnessMap = game.simplyDice.textureManager.loadTexture(this.config.roughnessMap, undefined, true);
+            this.roughnessMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.roughnessMap);
         else
-            this.material.roughnessMap = null;
+            this.roughnessMapNode.value = game.simplyDice.textureManager.white;
 
+        this.emissiveColorNode.value = new THREE.Color(this.config.emissiveColor);
+        this.emissiveIntensityNode.value = this.config.emissiveIntensity;
         if (this.config.emissiveMap)
-            this.material.emissiveMap = game.simplyDice.textureManager.loadTexture(this.config.emissiveMap);
+            this.emissiveMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.emissiveMap);
         else
-            this.material.emissiveMap = null;
+            this.emissiveMapNode.value = game.simplyDice.textureManager.white;
 
+        this.normalScaleNode.value = this.config.normalScale;
         if (this.config.normalMap)
-            this.material.normalMap = game.simplyDice.textureManager.loadTexture(this.config.normalMap, undefined, true);
+            this.normalMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.normalMap, undefined, true);
         else
-            this.material.normalMap = null;
+            this.normalMapNode.value = game.simplyDice.textureManager.blue;
 
+        // Doing this to refresh the material that isn't normally refreshed by changing texture nodes
+        this.material.setValues({
+            color: this.colorNode.value,
+            map: this.colorMapNode.value,
+            metalness: this.metalnessNode.value,
+            metalnessMap: this.metalnessMapNode.value,
+            roughness: this.roughnessNode.value,
+            roughnessMap: this.roughnessMapNode.value,
+            emissive: this.emissiveColorNode.value,
+            emissiveIntensity: this.emissiveIntensityNode.value,
+            emissiveMap: this.emissiveMapNode.value,
+            normalMap: this.normalMapNode.value,
+            normalScale: new THREE.Vector2(this.normalScaleNode.value, this.normalScaleNode.value)
+        });
         // Generating text labels
         if (this.submat === "faces") {
             const textConfig = this.config.text;
@@ -270,27 +371,9 @@ class DiceMaterial {
                     this.updateTextures(texs[0], texs[1]);
             });
 
-            const textNode = TSL.texture(this.textures.textColor);
-            this.material.colorNode = TSL.blendColor(this.material.colorNode, textNode);
-        
-            // For emissive, we create an emissive node using the material's emissive values and combine with the text's emissive
-            if (textConfig.emissiveColor !== 0 && textConfig.emissiveIntensity !== 0) {
-                let emissiveNode: THREE.Node<"vec3"> = TSL.color(this.material.emissive).rgb;
-                if (this.material.emissiveMap)
-                    emissiveNode = TSL.texture(this.material.emissiveMap).rgb.mul(emissiveNode);
-                emissiveNode = emissiveNode.mul(this.material.emissiveIntensity);
-                this.material.emissiveNode = TSL.color(textConfig.emissiveColor).mul(textConfig.emissiveIntensity).mul(textNode.a).add(emissiveNode);
-            }
-            else
-                this.material.emissiveNode = null;
-
-            const bumpTexNode = TSL.texture(this.textures.textBump);
-            const bumpNode = TSL.bumpMap(bumpTexNode.a, TSL.vec2(textConfig.bump, textConfig.bump));
-
-            // Combining normal with bump
-            const normalNode = TSL.normalMap((this.material.normalMap ? TSL.texture(this.material.normalMap).rgb : TSL.color(0.5, 0.5, 1)), TSL.vec2(this.material.normalScale));
-            // We use a cast because Typescript declaration is lacking
-            this.material.normalNode = TSL.normalize(TSL.mix(normalNode as unknown as THREE.Node<"vec3">, bumpNode as unknown as THREE.Node<"vec3">, bumpTexNode.a));
+            this.textEmissiveNode.value = new THREE.Color(textConfig.emissiveColor);
+            this.textEmissiveIntensityNode.value = textConfig.emissiveIntensity;
+            this.textBumpNode.value = textConfig.bump;
         }
 
         this.material.needsUpdate = true;
@@ -300,41 +383,41 @@ class DiceMaterial {
         const textCanvas = DiceMaterial.texRenderCanvas;
         if (!textCanvas)
             return [];
-    
+
         const definition = this.diceModel.definition.text;
         const config = this.config.text;;
-    
+
         if (!definition.items || !definition.items.length)
             return [];
-    
+
         const w = textCanvas.width;
         const h = textCanvas.height;
         const hratio = h / 1024;
-    
+
         const symbolMap = new Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }>();
         if (config.symbols) {
             await Promise.all(Object.entries(config.symbols).map(entry => new Promise<void>((resolve) => {
                 const image = new Image();
                 image.src = entry[1].url;
                 image.onload = () => {
-                    symbolMap.set(entry[0], { image, symbol: entry[1] }); 
-                    resolve(); 
+                    symbolMap.set(entry[0], { image, symbol: entry[1] });
+                    resolve();
                 };
-                image.onerror = () => { 
+                image.onerror = () => {
                     resolve();
                 }
                 image.decode();
                 globalThis.setTimeout(resolve, 5000);
             })));
         }
-    
+
         const context = textCanvas.getContext("2d");
         if (!context)
             return [];
-    
+
         context.clearRect(0, 0, w, h);
         context.reset();
-    
+
         const textHeight = definition.height * hratio;
         context.font = `${config.weight ?? ""} ${textHeight}px ${config.font}`;
         context.textAlign = "center";
@@ -344,23 +427,23 @@ class DiceMaterial {
         context.lineWidth = 5;
 
         this.drawText(context, definition, config, symbolMap, false);
-    
+
         const textColorMap = textCanvas.transferToImageBitmap();
-    
+
         // Creation of a mask map
         context.resetTransform();
         context.globalAlpha = 1;
         context.clearRect(0, 0, w, h);
         context.fillStyle = "white";
-    
+
         this.drawText(context, definition, config, symbolMap, true);
-    
+
         const textMaskMap = textCanvas.transferToImageBitmap();
 
         return [textColorMap, textMaskMap];
     }
 
-    drawText(context: OffscreenCanvasRenderingContext2D, definition: DiceTextDefinition, config: DiceMaterialTextConfig, symbolMap: Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }>, mask: boolean) {
+    private drawText(context: OffscreenCanvasRenderingContext2D, definition: DiceTextDefinition, config: DiceMaterialTextConfig, symbolMap: Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }>, mask: boolean) {
         const textCanvas = DiceMaterial.texRenderCanvas!;
         const wratio = textCanvas.width / 1024;
         const hratio = textCanvas.height / 1024;
@@ -370,16 +453,16 @@ class DiceMaterial {
         context.shadowColor = colorToStyle(config.outlineColor);
         context.shadowOffsetX = 0;
         context.shadowOffsetY = 0;
-        context.shadowBlur = 5;
+        context.shadowBlur = 3;
         context.globalAlpha = 1;
 
         for (const textItem of definition.items) {
             context.resetTransform();
-    
+
             context.translate(textItem.position[0] * wratio, textItem.position[1] * hratio);
             if (textItem.rotation)
                 context.rotate(Math.toRadians(textItem.rotation));
-    
+
             const symbolElement = symbolMap.get(textItem.label);
             if (symbolElement) {
                 const symbol = symbolElement.image;
@@ -387,12 +470,12 @@ class DiceMaterial {
                 const scale = symbolElement.symbol.scale ?? 1;
                 let width = scale * symbol.naturalWidth * definition.height / symbol.naturalHeight;
                 let height = scale * definition.height;
-    
+
                 if (width > definition.maxWidth) {
                     width = definition.maxWidth;
                     height = definition.maxWidth * symbol.naturalHeight / symbol.naturalWidth;
                 }
-                
+
                 context.drawImage(symbol, 0, 0, symbol.naturalWidth, symbol.naturalHeight, -width / 2, -height / 2, width, height);
 
                 // For applying color on the image
@@ -423,13 +506,27 @@ class DiceMaterial {
             else {
                 const metrics = context.measureText(textItem.label);
                 context.translate(0, metrics.actualBoundingBoxAscent / 2 - metrics.actualBoundingBoxDescent / 2);
-    
-                if (!mask) {
-                    context.globalAlpha = ((config.color >>> 24) & 255) / 255;
+
+                this.write(textItem.label, context, config.color, config.outlineColor, textMaxWidth, mask);
+
+                if (textItem.distinguisher) {
+                    this.write("  .", context, config.color, config.outlineColor, textMaxWidth, mask);
                 }
-                context.fillText(textItem.label, 0, 0, textMaxWidth);
             }
         }
+    }
+
+    private write(text: string, context: OffscreenCanvasRenderingContext2D, color: number, outlineColor: number, maxWidth: number, mask: boolean) {
+        if (!mask) {
+            context.save();
+            context.shadowColor = "rgba(0, 0, 0, 0)";
+            context.globalAlpha = ((outlineColor >>> 24) & 255) / 255
+            context.strokeText(text, 0, 0, maxWidth);
+            context.restore();
+
+            context.globalAlpha = ((color >>> 24) & 255) / 255;
+        }
+        context.fillText(text, 0, 0, maxWidth);
     }
 
     updateTextures(textColorMap: ImageBitmap, textMaskMap: ImageBitmap) {
@@ -449,18 +546,17 @@ class DiceMaterial {
             };
         }
 
-        if (this.textures.textBump) {
-            this.textures.textBump.image = textMaskMap;
+        if (this.textures.textMask) {
+            this.textures.textMask.image = textMaskMap;
             this.textMaskMap = textMaskMap;
-            this.textures.textBump.needsUpdate = true;
-            this.textures.textBump.onUpdate = (t) => {
+            this.textures.textMask.needsUpdate = true;
+            this.textures.textMask.onUpdate = (t) => {
                 textMaskMap.close?.();
                 t.onUpdate = null;
             };
         }
     }
 }
-
 
 export { DiceMaterial, UserDiceMaterials }
 export type { DiceMaterialConfig, DiceMaterialTextConfig, DiceMaterialConfigGroup, DiceMaterialSet }

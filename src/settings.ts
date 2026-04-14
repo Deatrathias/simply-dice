@@ -33,10 +33,10 @@ export function registerSettings() {
     registerSetting({ id: SETTING.TIME_UNTIL_DISAPPEARANCE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0.1 }), default: 4, scope: "world" });
     registerSetting({ id: SETTING.WAIT_FOR_ROLL, type: Boolean, default: false, scope: "world" });
     registerSetting({ id: SETTING.MAX_WAIT_TIME, type: new foundry.data.fields.NumberField({ nullable: false, min: 0 }), default: 4, scope: "world" });
-    registerSetting({ id: SETTING.THROW_IMPULSE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0, max: 100 }), default: 20, scope: "world", 
+    registerSetting({ id: SETTING.THROW_IMPULSE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0, max: 100 }), default: 5, scope: "world", 
         onChange: value => WORKER.updateSettings({ throwImpulse: value as number })});
     registerSetting({ id: SETTING.DISABLE_FOR_USER, type: Boolean, default: false, scope: "user" });
-    registerSetting({ id: SETTING.DICE_SIZE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0, max: 100, step: 1 }), default: 75, scope: "client", 
+    registerSetting({ id: SETTING.DICE_SIZE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0, max: 100, step: 1 }), default: 50, scope: "client", 
         onChange: value => game.simplyDice.diceArea?.changeSizeSetting(value as number)});
     registerSetting({ id: SETTING.MAX_DICE_ON_SCREEN, type: new foundry.data.fields.NumberField({ nullable: true, min: 1 }), default: 30, scope: "client", 
         onChange: value => game.simplyDice.diceArea?.changeMaxDice(value as number)});

@@ -12,6 +12,8 @@ import { SETTING } from "settings";
 import { EvaluateRollParams, Rolled } from "@7h3laughingman/foundry-types/client/dice/_module.mjs";
 import * as TSL from "three/tsl";
 import BloomNode, { bloom } from "three/addons/tsl/display/BloomNode.js"
+import { debugging } from "hooks";
+import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
 
 // That function is missing for some reason
 declare module "three/webgpu" {
@@ -46,17 +48,23 @@ type DiceTermParameter = {
 class DiceArea {
     private timer: THREE.Timer;
 
-    private renderer: THREE.WebGPURenderer;
+    renderer: THREE.WebGPURenderer;
 
     private renderPipeline: THREE.RenderPipeline;
 
     bloomProcess: BloomNode;
 
+    toneMappingIntensity: THREE.UniformNode<"float", number>;
+
+    bloomStrength: THREE.UniformNode<"float", number>;
+
+    bloomThreshold: THREE.UniformNode<"float", number>;
+
     divContainer?: HTMLDivElement;
 
     scene: THREE.Scene;
 
-    private camera!: THREE.PerspectiveCamera;
+    camera!: THREE.PerspectiveCamera;
 
     hemiLight!: THREE.HemisphereLight;
 
@@ -127,12 +135,21 @@ class DiceArea {
         this.allDice = [];
         this.renderer = new THREE.WebGPURenderer({ alpha: true, antialias: getSetting(SETTING.ANTIALIASING) });
         this.renderer.setClearColor(0, 0);
-        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+        THREE.ColorManagement.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
+        this.renderer.shadowMap.transmitted = true;
         this.renderer.setAnimationLoop((time) => this.update(time));
         const scenePass = TSL.pass(this.scene, this.camera);
-        this.bloomProcess = bloom(scenePass, 1, 0, 3);
-        this.renderPipeline = new THREE.RenderPipeline(this.renderer, TSL.vec4(TSL.acesFilmicToneMapping(this.mergeBloom(scenePass, this.bloomProcess), TSL.uniform(0.7)), scenePass.a));
+        this.bloomStrength = TSL.uniform(1);
+        this.bloomThreshold = TSL.uniform(5);
+        this.bloomProcess = bloom(scenePass, 0, 0, 1);
+        this.bloomProcess.strength = this.bloomStrength;
+        this.bloomProcess.threshold = this.bloomThreshold;
+        this.toneMappingIntensity = TSL.uniform(1);
+        this.renderPipeline = new THREE.RenderPipeline(this.renderer);
+        this.renderPipeline.outputNode = TSL.renderOutput(this.mergeBloom(scenePass, this.bloomProcess), THREE.ACESFilmicToneMapping, THREE.LinearSRGBColorSpace);
+        this.renderPipeline.outputColorTransform = true;
         this.changeSizeSetting(getSetting(SETTING.DICE_SIZE), true);
         this.resizeArea();
 
@@ -151,10 +168,10 @@ class DiceArea {
 
     private initScene() {
         this.camera = new THREE.PerspectiveCamera(30, 0.5, 0.1, 1000);
-        this.hemiLight = new THREE.HemisphereLight(new THREE.Color("white"), new THREE.Color("black"), 0.5);
+        this.hemiLight = new THREE.HemisphereLight(new THREE.Color("white"), new THREE.Color("black"), 1);
         this.scene.add(this.hemiLight);
-        this.dirLight = new THREE.DirectionalLight(new THREE.Color(1, 1, 1), 0.5);
-        this.dirLight.position.set(30, 30, -20);
+        this.dirLight = new THREE.DirectionalLight(new THREE.Color(1, 1, 1), 1);
+        this.dirLight.position.set(20, 50, -20);
         this.dirLight.target.position.set(0, 0, 0);
         this.changeShadowMap(parseInt(getSetting<string>(SETTING.SHADOW_MAP_RESOLUTION)));
         this.scene.add(this.dirLight);
@@ -162,6 +179,14 @@ class DiceArea {
         this.scene.add(this.floor);
         this.camera.position.y = 40;
         this.camera.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), -HALF_PI);
+
+        if (!debugging)
+            return;
+        this.debugModel = getDiceModel("d10")?.instantiateModel(game.simplyDice.userMaterials!.get(game.userId)!.getMaterialSet("d10")!);
+        this.debugModel?.quaternion.set(-0.0499904803327302, -0.07139380484326963, -0.0868240888334651, 0.9924038765061041);
+
+        if (this.debugModel)
+            this.scene.add(this.debugModel);
     }
 
     /**
@@ -172,10 +197,11 @@ class DiceArea {
         if (!game.simplyDice.textureManager)
             return;
 
-        this.defaultEnvironment = TSL.pmremTexture(game.simplyDice.textureManager.loadTexture(MODULE.relativePath("textures/DayEnvironmentHDRI043_4K_TONEMAPPED.jpg"), texture => {
+        const loader = new EXRLoader();
+        this.defaultEnvironment = TSL.pmremTexture(loader.load(MODULE.relativePath("textures/clarens_midday_1k.exr"), texture => {
             texture.mapping = THREE.EquirectangularReflectionMapping;
             texture.colorSpace = THREE.SRGBColorSpace;
-            texture.flipY = true;
+            texture.flipY = false;
             if (!getSetting<boolean>(SETTING.IMMERSIVE_ENVIRONMENT))
                 this.scene.environmentNode = this.defaultEnvironment;
         }));
@@ -265,7 +291,7 @@ class DiceArea {
     }
 
     changeSizeSetting(size: number, noResize: boolean = false) {
-        this.changeHeight(60 - size * 0.4, noResize);
+        this.changeHeight(50 - size * 0.4, noResize);
     }
 
     changeMaxDice(maxDice: number | null) {
@@ -327,6 +353,19 @@ class DiceArea {
         }
     }
 
+    updateImmersiveEnvironment() {
+        if (!this.immersiveCanvasContext)
+            return;
+
+        const w = this.immersiveCanvasContext.canvas.width;
+        const h = this.immersiveCanvasContext.canvas.height;
+        this.immersiveCanvasContext.fillStyle = canvas.colors.sceneBackground.multiply(canvas.colors.background).toHTML();
+        this.immersiveCanvasContext.fillRect(0, 0, w, h/2)
+        this.immersiveCanvasContext.drawImage(canvas.app.view as HTMLCanvasElement, 0, 0, window.innerWidth, window.innerHeight, 0, h/2, w, h);
+        this.immersiveCanvasTexture!.needsPMREMUpdate = true;
+        this.immersiveUpdateTexture = false;
+    }
+
     debugLine?: THREE.LineSegments;
 
     /**
@@ -339,7 +378,7 @@ class DiceArea {
         if (this.rollStack.length > 0)
             this.doRoll();
 
-        if (this.allDice.length == 0) {
+        if (this.allDice.length == 0 && !this.debugModel) {
             this.changeCanvasVisibility(false);
             return;
         }
@@ -355,20 +394,10 @@ class DiceArea {
             this.scene.remove(d.graphics);
             this.allDice.findSplice(ad => ad === d);
         });
-
-        
-
         //this.dirLight.intensity = canvas.colors.background.hsv[2];
 
-        if (this.immersiveUpdateTexture && this.immersiveCanvasContext) {
-            const w = this.immersiveCanvasContext.canvas.width;
-            const h = this.immersiveCanvasContext.canvas.height;
-            this.immersiveCanvasContext.fillStyle = canvas.colors.sceneBackground.multiply(canvas.colors.background).toHTML();
-            this.immersiveCanvasContext.fillRect(0, 0, w, h/2)
-            this.immersiveCanvasContext.drawImage(canvas.app.view as HTMLCanvasElement, 0, 0, window.innerWidth, window.innerHeight, 0, h/2, w, h);
-            this.immersiveCanvasTexture!.needsPMREMUpdate = true;
-            this.immersiveUpdateTexture = false;
-        }
+        if (this.immersiveUpdateTexture)
+            this.updateImmersiveEnvironment();
 
         this.renderPipeline.render();
 
@@ -398,8 +427,6 @@ class DiceArea {
         return result;
     }
 
-    
-
     /**
      * Check if the roll can be displayed with 3D dice
      * @param roll The roll
@@ -426,18 +453,37 @@ class DiceArea {
         const rollId = this.nextRollId;
         this.nextRollId++;
 
+        const adjustedDiceTerms = diceTerms.map(d => { return { denomination: d.denomination, number: d.number, results: d.results.map(r => { return { result: r.result }; }) } });
+
+        // Case for the d100
+        adjustedDiceTerms.filter(d => d.denomination === "d100").forEach(d => {
+            const newDice = { 
+                denomination: "d10", 
+                number: d.number,
+                results: [...d.results.map(r => {
+                    let result = { result: r.result % 10 };
+                    if (result.result == 0)
+                        result.result = 10;
+                    return result;
+                })]
+            } satisfies DiceTermParameter;
+            d.results.forEach(r =>  r.result = Math.floor((r.result % 100) / 10) * 10);
+
+            adjustedDiceTerms.push(newDice);
+        });
+
         const params = {
             seed: Math.floor(Math.random() * 4294967296),
             userId: game.userId,
             rollId,
-            diceTerms
+            diceTerms: adjustedDiceTerms
         } satisfies RollParameters;
         this.rollStack.push(params);
 
         game.socket.emit(socketName, { type: "doRoll", data: { 
             seed: params.seed,
             userId: game.userId,
-            diceTerms: params.diceTerms.map(d => { return { denomination: d.denomination, number: d.number, results: d.results.map(r => { return { result: r.result }; }) } })
+            diceTerms: adjustedDiceTerms
             }} satisfies DoRollMessage);
 
         await new Promise<void>((resolve) => { 
@@ -564,7 +610,7 @@ class DiceArea {
 
         this.debugModel.applyQuaternion(new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.toRadians(x), Math.toRadians(y), Math.toRadians(z))));
 
-        console.log(Object.fromEntries([["x", this.debugModel.quaternion.x], ["y", this.debugModel.quaternion.y], ["z", this.debugModel.quaternion.z], ["w", this.debugModel.quaternion.w]]));
+        console.log(this.debugModel.quaternion.toArray());
     }
 
     debugWindowReset() {

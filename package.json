@@ -4,9 +4,10 @@
   "type": "module",
   "description": "",
   "scripts": {
-    "dev": "vite dev --no-open",
+    "dev": "vite dev",
     "build": "vite build",
     "tsc": "tsc --build",
+    "tsbuild": "tsc --build && vite build",
     "esbuild": "esbuild src/main.ts --bundle --keep-names --minify --sourcemap --outdir=dist/src",
     "clean": "tsc --build --clean"
   },

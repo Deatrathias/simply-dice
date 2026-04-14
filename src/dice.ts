@@ -3,6 +3,7 @@ import { DiceModel } from "dice-definition.ts";
 import { DiceMaterialSet } from "dice-materials";
 import { SETTING } from "settings";
 import * as THREE from "three/webgpu";
+import * as TSL from "three/tsl";
 import * as UTILS from "utils.ts";
 
 type SimulationStep = {
@@ -39,9 +40,17 @@ class DiceObject {
 
     lifetime: number;
 
+    maxLifetime: number;
+
     targetResult: number;
 
     rotationOffset: THREE.Quaternion;
+
+    disappearingDuration: number;
+
+    isDisappearing: boolean;
+
+    tempMaterials: THREE.Material[] = [];
 
     public get isAlive() : boolean {
         return this.lifetime > 0;
@@ -56,8 +65,12 @@ class DiceObject {
         this.diceModel = diceModel;
         this.graphics = diceModel.instantiateModel(materials);
         this.graphics.traverse(o => o.castShadow = true);
-        this.lifetime = getSetting(SETTING.TIME_UNTIL_DISAPPEARANCE);
+        this.maxLifetime = getSetting(SETTING.TIME_UNTIL_DISAPPEARANCE);
+        this.lifetime = this.maxLifetime;
         this.rotationOffset = new THREE.Quaternion().identity();
+        this.disappearingDuration = 1;
+        this.isDisappearing = false;
+        this.graphics.userData = { disappear: 1 };
     }
 
     /**
@@ -110,9 +123,8 @@ class DiceObject {
 
         const currentFaceValue = this.rotationFaceValue(steps[this.simulation.steps.length - 1].rotation);
 
-        if (currentFaceValue) {
+        if (currentFaceValue !== undefined)
             this.rotationOffset.copy(this.diceModel.getRotationForValue(currentFaceValue).invert().multiply(this.diceModel.getRotationForValue(this.targetResult)));
-        }
 
         scene.add(this.graphics);
         this.started = true;
@@ -133,11 +145,23 @@ class DiceObject {
         if (!this.started)
             return;
 
-        if (!this.running)
+        if (!this.running) {
             this.lifetime -= deltaTime;
 
-        if (!this.isAlive)
+            if (this.disappearingDuration > 0 && this.maxLifetime > 0) {
+                const actualDisappearTime = Math.min(this.disappearingDuration, this.maxLifetime);
+
+                if (this.lifetime < actualDisappearTime) {
+                    this.disappear(this.lifetime / actualDisappearTime);
+                }
+            }
+        }
+
+        if (!this.isAlive) {
+            this.tempMaterials.forEach(m => m.dispose());
+            this.tempMaterials.length = 0;
             return;
+        }
 
         if (!this.simulation || !this.running || !this.runStartTime)
             return;
@@ -177,6 +201,43 @@ class DiceObject {
                 resolve();
             }
         }
+    }
+
+    /**
+     * Make the dice disappear over time
+     * @param progress Value from 1 to 0
+     */
+    disappear(progress: number) {
+        if (!this.isDisappearing) {
+            this.isDisappearing = true;
+
+            this.graphics.traverse(o => {
+                if (o instanceof THREE.Mesh && o.isMesh)
+                {
+                    if (o.material instanceof THREE.Material)
+                        o.material = this.createDisappearMaterial(o.material);
+                    else
+                        o.material = (o.material as THREE.Material[]).map(m => this.createDisappearMaterial(m));
+                }
+            });
+        }
+
+        this.graphics.userData = { disappear: progress };
+    }
+
+    /**
+     * Make a new transparent material from the source
+     * @param source Original material
+     * @returns Transparent material, or the same if it's already transparent
+     */
+    createDisappearMaterial(source: THREE.Material): THREE.Material {
+        if (source.transparent)
+            return source;
+        const mat = source.clone();
+        mat.transparent = true;
+        mat.needsUpdate = true;
+        this.tempMaterials.push(mat);
+        return mat;
     }
 }
 

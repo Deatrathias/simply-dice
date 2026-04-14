@@ -7,7 +7,6 @@ export default defineConfig({
     base: `/modules/simply-dice/`,
     publicDir: "static",
     server: {
-        open: "/",
         port: 30001,
         proxy: {
             "^(?!/modules/simply-dice)": "http://localhost:30000",
