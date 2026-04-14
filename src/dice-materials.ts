@@ -101,7 +101,8 @@ class UserDiceMaterials {
      * Initialize materials for the user
      */
     initMaterials() {
-        this.settingGroup = (game.settings.storage.get("user").getSetting(`${MODULE.id}.${SETTING.DICE_MATERIALS}`, this.userId)?.value as DiceMaterialConfigGroup | null) ?? undefined;
+        const setting = game.settings.storage.get("user").getSetting(`${MODULE.id}.${SETTING.DICE_MATERIALS}`, this.userId);
+        this.settingGroup = setting?.value as DiceMaterialConfigGroup | undefined | null ?? undefined;
 
         forEveryModel((denomination, model) => {
             let materialSet = this.materials.get(denomination);
