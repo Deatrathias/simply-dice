@@ -75,7 +75,7 @@ jobs:
       - name: Setup NodeJS
         uses: actions/setup-node@v4
         with:
-          node-version: 22.9
+          node-version: 24.14.1
           
       - name: Cache NPM dependencies
         id: cache-npm
@@ -86,7 +86,9 @@ jobs:
           
       - name: Install NPM dependencies
         if: ${{ steps.cache-npm.outputs.cache-hit != 'true' }}
-        run: npm ci
+        run: |
+          npm install
+          npm ci
           
       - name: Build Project
         run: npm run build
