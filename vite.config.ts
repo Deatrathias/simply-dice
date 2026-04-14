@@ -4,7 +4,6 @@ import wasm from "vite-plugin-wasm";
 
 export default defineConfig({
     root: ".",
-    base: `/modules/simply-dice/`,
     publicDir: "static",
     server: {
         port: 30001,
