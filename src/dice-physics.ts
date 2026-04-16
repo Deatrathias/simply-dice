@@ -98,7 +98,10 @@ class PhysicsArea {
         };
 
         // Bouncy walls
-        Object.entries(this.walls).forEach(w => w[1].setRestitution(1));
+        Object.values(this.walls).forEach(w => { 
+            w.setRestitution(1); 
+            w.setCollisionGroups(1 | (0b10 << 16));
+        });
 
         this.throwImpulse = 20;
         this.updateSettings(settings);
@@ -167,7 +170,7 @@ class PhysicsArea {
 
                 const impulse = toRotation.rotateVector({ x: -this.throwImpulse - random(rng) * (this.throwImpulse / 5), y: 0, z: 0 }) as RAPIER.Vector;
                 const offsetRotation = toRotation.mul(Quaternion.fromAxisAngle([0, 1, 0], ((count % 3) - 1) * Math.PI / 6));
-                const offsetVector = offsetRotation.rotateVector({ x: (-2 - Math.floor((count + 2) / 3)), y: 0, z: 0 }) as RAPIER.Vector;
+                const offsetVector = offsetRotation.rotateVector({ x: (-Math.floor((count + 2) / 3)), y: 0, z: 0 }) as RAPIER.Vector;
 
                 const startRotation = new Quaternion(random(rng) * 2 - 1, random(rng) * 2 - 1, random(rng) * 2 - 1, random(rng) * 2 - 1).normalize();
                 const dice = new SimulatedDice(this, diceTerm.id, simulationData.startTime, baseStepCount, maxStepCount, obj, addVectors(centerStartPoint, offsetVector), startRotation);
@@ -276,6 +279,8 @@ class SimulatedDice {
 
     rigidbody: RAPIER.RigidBody;
 
+    collider: RAPIER.Collider;
+
     posRot: Float32Array;
 
     startTime: number;
@@ -294,7 +299,8 @@ class SimulatedDice {
         this.area = area;
         this.id = id;
         this.rigidbody = area.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(position.x, position.y, position.z).setRotation(rotation));
-        area.world.createCollider(collider, this.rigidbody);
+        this.collider = area.world.createCollider(collider, this.rigidbody);
+        this.collider.setCollisionGroups(0b10 | (0b10 << 16));
         this.maxByteSize = SimulatedDice.toByteSize(maxStepCount);
         this.posRot = new Float32Array(new ArrayBuffer(SimulatedDice.toByteSize(baseStepCount), { maxByteLength: this.maxByteSize }));
         this.startTime = startTime;
@@ -317,6 +323,13 @@ class SimulatedDice {
 
             if (this.posRot.buffer.byteLength == this.posRot.buffer.maxByteLength) {
                 console.log("max reached");
+            }
+        }
+
+        // Set up wall collision once we're inside
+        if ((this.collider.collisionGroups() & (1 << 16)) == 0) {
+            if (Math.abs(position.x) <= this.area.currentWidth / 2 - 1 && Math.abs(position.y) <= this.area.currentHeight / 2 - 1) {
+                this.collider.setCollisionGroups(this.collider.collisionGroups() | (1 << 16));
             }
         }
 

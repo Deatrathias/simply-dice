@@ -55,7 +55,7 @@ const defaultMaterialConfig = {
 
 type DiceMaterialConfigGroup = Record<string, DiceMaterialConfig>;
 
-type DiceMaterialSubmat = "faces" | "edges";
+type DiceMaterialSubmat = "faces" | "facesSecret" | "edges";
 
 type DiceMaterialSet = {
     [K in DiceMaterialSubmat]: DiceMaterial
@@ -112,16 +112,19 @@ class UserDiceMaterials {
             if (!materialSet) {
                 materialSet = {
                     faces: new DiceMaterial(configFaces, this.userId, model, "faces"),
+                    facesSecret: new DiceMaterial(configFaces, this.userId, model, "facesSecret"),
                     edges: new DiceMaterial(configEdges, this.userId, model, "edges")
                 };
                 this.materials.set(denomination, materialSet);
             }
             else {
                 materialSet.faces.config = configFaces;
+                materialSet.facesSecret.config = configFaces;
                 materialSet.edges.config = configEdges;
             }
 
             materialSet.faces.buildMaterial();
+            materialSet.facesSecret.buildMaterial();
             materialSet.edges.buildMaterial();
         });
     }
@@ -140,6 +143,8 @@ class UserDiceMaterials {
             if (!foundry.utils.objectsEqual(material[1].faces.config, configFaces)) {
                 material[1].faces.config = configFaces;
                 material[1].faces.buildMaterial();
+                material[1].facesSecret.config = configFaces;
+                material[1].facesSecret.buildMaterial();
             }
 
             if (!foundry.utils.objectsEqual(material[1].edges.config, configEdges)) {
@@ -251,7 +256,7 @@ class DiceMaterial {
         this.submat = submat;
 
         this.textures = {};
-        if (submat === "faces") {
+        if (submat === "faces" || submat === "facesSecret") {
             this.textures.textColor = new THREE.Texture();
             this.textures.textColor.flipY = false;
             this.textures.textColor.colorSpace = THREE.SRGBColorSpace;
@@ -260,12 +265,6 @@ class DiceMaterial {
             this.textures.textMask.colorSpace = THREE.NoColorSpace;
         }
         this.initMaterial();
-    }
-
-    createWhiteTexture(): THREE.Texture {
-        const result = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]));
-        result.needsUpdate = true;
-        return result;
     }
 
     initMaterial() {
@@ -296,7 +295,7 @@ class DiceMaterial {
 
         this.material.opacityNode = TSL.userData("disappear", "float");
 
-        if (this.submat === "faces") {
+        if (this.submat === "faces" || this.submat === "facesSecret") {
             this.material.colorNode = TSL.blendColor(this.material.colorNode, TSL.texture(this.textures.textColor));
 
             // For emissive, we create an emissive node using the material's emissive values and combine with the text's emissive
@@ -365,7 +364,7 @@ class DiceMaterial {
             normalScale: new THREE.Vector2(this.normalScaleNode.value, this.normalScaleNode.value)
         });
         // Generating text labels
-        if (this.submat === "faces") {
+        if (this.submat === "faces" || this.submat === "facesSecret") {
             const textConfig = this.config.text;
             this.generateTextTexture().then(texs => {
                 if (texs.length == 2)
@@ -395,13 +394,14 @@ class DiceMaterial {
         const h = textCanvas.height;
         const hratio = h / 1024;
 
-        const symbolMap = new Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }>();
-        if (config.symbols) {
+        let symbolMap: Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }> | undefined = undefined;
+        if (this.submat === "faces" && config.symbols) {
+            symbolMap = new Map();
             await Promise.all(Object.entries(config.symbols).map(entry => new Promise<void>((resolve) => {
                 const image = new Image();
                 image.src = entry[1].url;
                 image.onload = () => {
-                    symbolMap.set(entry[0], { image, symbol: entry[1] });
+                    symbolMap!.set(entry[0], { image, symbol: entry[1] });
                     resolve();
                 };
                 image.onerror = () => {
@@ -427,7 +427,7 @@ class DiceMaterial {
         context.strokeStyle = colorToStyle(config.outlineColor);
         context.lineWidth = 5;
 
-        this.drawText(context, definition, config, symbolMap, false);
+        this.drawText(context, definition, config, false, symbolMap);
 
         const textColorMap = textCanvas.transferToImageBitmap();
 
@@ -437,14 +437,14 @@ class DiceMaterial {
         context.clearRect(0, 0, w, h);
         context.fillStyle = "white";
 
-        this.drawText(context, definition, config, symbolMap, true);
+        this.drawText(context, definition, config, true, symbolMap);
 
         const textMaskMap = textCanvas.transferToImageBitmap();
 
         return [textColorMap, textMaskMap];
     }
 
-    private drawText(context: OffscreenCanvasRenderingContext2D, definition: DiceTextDefinition, config: DiceMaterialTextConfig, symbolMap: Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }>, mask: boolean) {
+    private drawText(context: OffscreenCanvasRenderingContext2D, definition: DiceTextDefinition, config: DiceMaterialTextConfig, mask: boolean, symbolMap?: Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }>) {
         const textCanvas = DiceMaterial.texRenderCanvas!;
         const wratio = textCanvas.width / 1024;
         const hratio = textCanvas.height / 1024;
@@ -464,7 +464,8 @@ class DiceMaterial {
             if (textItem.rotation)
                 context.rotate(Math.toRadians(textItem.rotation));
 
-            const symbolElement = symbolMap.get(textItem.label);
+            const label = this.submat === "faces" ? textItem.label : "?";
+            const symbolElement = symbolMap?.get(label);
             if (symbolElement) {
                 const symbol = symbolElement.image;
 
@@ -505,12 +506,12 @@ class DiceMaterial {
                 }
             }
             else {
-                const metrics = context.measureText(textItem.label);
+                const metrics = context.measureText(label);
                 context.translate(0, metrics.actualBoundingBoxAscent / 2 - metrics.actualBoundingBoxDescent / 2);
 
-                this.write(textItem.label, context, config.color, config.outlineColor, textMaxWidth, mask);
+                this.write(label, context, config.color, config.outlineColor, textMaxWidth, mask);
 
-                if (textItem.distinguisher) {
+                if (this.submat === "faces" && textItem.distinguisher) {
                     this.write("  .", context, config.color, config.outlineColor, textMaxWidth, mask);
                 }
             }

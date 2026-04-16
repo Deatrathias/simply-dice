@@ -85,7 +85,7 @@ class DiceModel {
      * @param materials The materials to apply to this mesh
      * @returns A new Mesh that copies the model
      */
-    instantiateModel(materialSet: DiceMaterialSet): THREE.Mesh {
+    instantiateModel(materialSet: DiceMaterialSet, isSecret?: boolean): THREE.Mesh {
         if (!this.model)
             throw new Error("Model is missing");
         if (!materialSet.faces.material || !materialSet.edges.material)
@@ -94,9 +94,9 @@ class DiceModel {
         mesh.copy(this.model);
         mesh.material = (mesh.material as THREE.Material[]).map(m => {
             if (m.name === "Faces")
-                return materialSet.faces.material!;
+                return isSecret ? materialSet.facesSecret.material : materialSet.faces.material;
             else if (m.name === "Edges")
-                return materialSet.edges.material!;
+                return materialSet.edges.material;
             return m;
         });
 

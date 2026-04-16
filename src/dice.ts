@@ -30,6 +30,8 @@ class DiceObject {
 
     simulation?: Simulation;
 
+    secret: boolean;
+
     started: boolean;
 
     running: boolean;
@@ -56,14 +58,15 @@ class DiceObject {
         return this.lifetime > 0;
     }
 
-    constructor(id: number, diceModel: DiceModel, materials: DiceMaterialSet, targetResult: number, rollId?: number) {
+    constructor(id: number, diceModel: DiceModel, materials: DiceMaterialSet, targetResult: number, rollId?: number, isSecret?: boolean) {
         this.id = id;
         this.rollId = rollId;
         this.running = false;
         this.started = false;
         this.targetResult = targetResult;
         this.diceModel = diceModel;
-        this.graphics = diceModel.instantiateModel(materials);
+        this.secret = isSecret ?? false;
+        this.graphics = diceModel.instantiateModel(materials, isSecret);
         this.graphics.traverse(o => o.castShadow = true);
         this.maxLifetime = getSetting(SETTING.TIME_UNTIL_DISAPPEARANCE);
         this.lifetime = this.maxLifetime;
@@ -121,11 +124,12 @@ class DiceObject {
             steps
         };
 
-        const currentFaceValue = this.rotationFaceValue(steps[this.simulation.steps.length - 1].rotation);
+        if (!this.secret) {
+            const currentFaceValue = this.rotationFaceValue(steps[this.simulation.steps.length - 1].rotation);
 
-        if (currentFaceValue !== undefined)
-            this.rotationOffset.copy(this.diceModel.getRotationForValue(currentFaceValue).invert().multiply(this.diceModel.getRotationForValue(this.targetResult)));
-
+            if (currentFaceValue !== undefined)
+                this.rotationOffset.copy(this.diceModel.getRotationForValue(currentFaceValue).invert().multiply(this.diceModel.getRotationForValue(this.targetResult)));
+        }
         scene.add(this.graphics);
         this.started = true;
         this.running = true;

@@ -1,7 +1,7 @@
 import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
-import { EvaluateRollParams, Rolled } from "@7h3laughingman/foundry-types/client/dice/_module.mjs";
 import { DatabaseUpdateOperation } from "@7h3laughingman/foundry-types/common/abstract/_module.mjs";
 import { ChatMessageCreateOperation } from "@7h3laughingman/foundry-types/common/documents/chat-message.mjs";
+import BaseUser from "@7h3laughingman/foundry-types/common/documents/user.mjs";
 import { initDiceArea } from "dice-area.ts";
 import { loadDefinitions } from "dice-definition.ts";
 import { DiceMaterialConfigGroup, UserDiceMaterials } from "dice-materials";
@@ -11,6 +11,7 @@ import { initSocket } from "socket";
 import { initTextureManager } from "texture-manager";
 
 export const debugging = false;
+const libWrapper = (globalThis as any).libWrapper;
 
 Hooks.on("init", () => {
     registerSettings();
@@ -18,15 +19,31 @@ Hooks.on("init", () => {
     WORKER.startWorker();
     loadDefinitions();
 
-    const libWrapper = (globalThis as any).libWrapper;
-    libWrapper.register(MODULE.id, "foundry.dice.Roll.prototype._evaluate", _evaluateWrapped);
+    libWrapper.register(MODULE.id, "ChatMessage._preCreateOperation", preCreateMessage);
 });
 
-async function _evaluateWrapped(this: Roll, wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, options?: EvaluateRollParams): Promise<Rolled<Roll>> {
-    if (!game.simplyDice.diceArea)
-        return wrapped(options);
+async function preCreateMessage(wrapped: (document: ChatMessage[], operation: ChatMessageCreateOperation, user: BaseUser) => Promise<void>, document: ChatMessage[], operation: ChatMessageCreateOperation, user: BaseUser) {
+    
+    if (game.simplyDice.diceArea) {
+        const rolls: Roll[] = [];
+        rolls.push(...document.flatMap(m => m.rolls));
 
-    return game.simplyDice.diceArea.onEvaluate(wrapped, this, options);
+        const promises = [];
+        for (const message of document) {
+            if (message.rolls) {
+                promises.push(...message.rolls.map(r => game.simplyDice.diceArea!.triggerRoll(r, message)));
+            }
+        }
+
+        if (promises.length > 0) {
+            const rolled = await Promise.all(promises);
+            if (rolled.find(b => b)) {
+                document.forEach(m => m.updateSource({"-=sound": null}));
+            }
+        }
+    }
+    
+    return await wrapped(document, operation, user);
 }
 
 Hooks.on("setup", () => {
@@ -73,16 +90,6 @@ Hooks.on("ready", () => {
                 game.simplyDice.diceArea!.hemiLight.intensity = parseFloat((event.target as HTMLInputElement).value);
             });
         });
-    }
-});
-
-Hooks.on("preCreateChatMessage", (message: ChatMessage, data: object, options: Partial<ChatMessageCreateOperation>, userId: string) => {
-    if (message.rolls?.length > 0 && message.sound) {
-        if (message.rolls.find(r => r.options["simplyDice-noSound"] === true)) {
-            message.updateSource({
-                "-=sound": null
-            });
-        }
     }
 });
 

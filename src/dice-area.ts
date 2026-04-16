@@ -9,9 +9,8 @@ import { DoRollMessage, socketName } from "socket";
 import { SortedSet } from "@rimbu/sorted";
 import { playDiceSound } from "audio";
 import { SETTING } from "settings";
-import { EvaluateRollParams, Rolled } from "@7h3laughingman/foundry-types/client/dice/_module.mjs";
 import * as TSL from "three/tsl";
-import BloomNode, { bloom } from "three/addons/tsl/display/BloomNode.js"
+import BloomNode, { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { debugging } from "hooks";
 import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
 
@@ -31,6 +30,8 @@ type RollParameters = {
     userId: string,
     rollId?: number,
     createdAt?: number,
+    visibility: { blind?: boolean, users?: string[] },
+    blind?: boolean,
     diceTerms: DiceTermParameter[]
 }
 
@@ -455,12 +456,13 @@ class DiceArea {
      * @param options Evaluated roll options
      * @returns Rolled
      */
-    async onEvaluate(wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, roll: Roll, options?: EvaluateRollParams): Promise<Rolled<Roll>> {
+    /*async onEvaluate(wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, roll: Roll, options?: EvaluateRollParams): Promise<Rolled<Roll>> {
         const diceToRoll = [];
         if (this.can3dRoll(roll)) {
             diceToRoll.push(...roll.dice.filter(d => !(d as any)._simplyDiceRolled));
             diceToRoll.forEach(d => (d as any)._simplyDiceRolled = true);
         }
+        console.log(roll);
 
         const result = await wrapped(options);
 
@@ -471,6 +473,18 @@ class DiceArea {
             result.options["simplyDice-noSound"] = true;
         }
         return result;
+    }*/
+
+    async triggerRoll(roll: Roll, message?: ChatMessage): Promise<boolean> {
+        let played = false;
+        if (this.can3dRoll(roll)) {
+            played = true;
+            const promise = this.rollAndWait(roll.dice, message);
+            if (getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
+                await promise;
+        }
+
+        return played;
     }
 
     /**
@@ -495,11 +509,15 @@ class DiceArea {
      * Start a 3D roll to perform and wait until it is done
      * @param diceTerms terms of the roll
      */
-    async rollAndWait(diceTerms: DiceTermParameter[]) {
+    async rollAndWait(diceTerms: DiceTermParameter[], message?: ChatMessage) {
         const rollId = this.nextRollId;
         this.nextRollId++;
 
-        const adjustedDiceTerms = diceTerms.map(d => { return { denomination: d.denomination, number: d.number, results: d.results.map(r => { return { result: r.result }; }) } });
+        const adjustedDiceTerms = diceTerms.map(d => { 
+            return { 
+                denomination: d.denomination, 
+                number: d.number, 
+                results: d.results.map(r => { return { result: r.result }; }) } satisfies DiceTermParameter });
 
         // Case for the d100
         adjustedDiceTerms.filter(d => d.denomination === "d100").forEach(d => {
@@ -522,6 +540,10 @@ class DiceArea {
             seed: Math.floor(Math.random() * 4294967296),
             userId: game.userId,
             rollId,
+            visibility: {
+                users: message?.whisper as string[],
+                blind: message?.blind
+            },
             diceTerms: adjustedDiceTerms
         } satisfies RollParameters;
         this.rollStack.push(params);
@@ -529,6 +551,7 @@ class DiceArea {
         game.socket.emit(socketName, { type: "doRoll", data: { 
             seed: params.seed,
             userId: game.userId,
+            visibility: { users: message?.whisper as string[] },
             diceTerms: adjustedDiceTerms
             }} satisfies DoRollMessage);
 
@@ -544,7 +567,7 @@ class DiceArea {
     }
 
     /**
-     * Add a roll to be displayed
+     * Add a roll from another player to be displayed
      * @param roll 
      */
     enqueueRoll(roll: RollParameters) {
@@ -571,7 +594,9 @@ class DiceArea {
                 break;
 
             this.rng.seed(params.seed);
-            
+
+            const secret = params.visibility.users && params.visibility.users.length > 0 && !params.visibility.users.includes(game.userId) && (params.visibility.blind === undefined || params.visibility.blind);
+
             const simulationData: SimulationRoll = {
                 randomNumbers: [],
                 diceTerms: []
@@ -581,7 +606,7 @@ class DiceArea {
                 const diceModel = getDiceModel(term.denomination);
                 if (!diceModel)
                     continue;
-
+                
                 effectiveDiceTerms.push(term);
                 const diceCount = term.number ?? 0;
                 for (let i = 0; i < diceCount; i++) {
@@ -595,7 +620,7 @@ class DiceArea {
                         continue;
 
                     count++;
-                    const dice = new DiceObject(this.nextDiceId, diceModel, materialSet, result, params.rollId);
+                    const dice = new DiceObject(this.nextDiceId, diceModel, materialSet, result, params.rollId, secret);
                     this.nextDiceId++;
                     simulationData.diceTerms.push({
                         id: dice.id,
