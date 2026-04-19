@@ -1,13 +1,24 @@
-export type PhysicsMessage = LoadObjMessage | InitMessage | ResizeAreaMessage | UpdateSettingsMessage | SimulationStartMessage | RemoveDiceMessage;
+export type PhysicsMessage = LoadObjMessage | DefineColliderShape | InitMessage | ResizeAreaMessage | UpdateSettingsMessage | SimulationStartMessage | RemoveDiceMessage;
 
 export type LoadObjMessage = {
     type: "loadObj",
-    data: LoadObjMessageDate
+    data: LoadObjMessageData
 }
 
-export type LoadObjMessageDate = {
+export type LoadObjMessageData = {
     url: string,
     denomination: string
+}
+
+export type DefineColliderShape = {
+    type: "defineColliderShape",
+    data: DefineColliderShapeData
+}
+
+export type DefineColliderShapeData = {
+    denomination: string,
+    shape: string,
+    args: number[]
 }
 
 export type InitMessage = {

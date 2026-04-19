@@ -8,8 +8,12 @@ import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
 type DiceDefinition = {
     denomination: string,
     modelUrl: string,
-    colliderUrl: string
-    rotationForValue: Record<string, THREE.QuaternionTuple>,
+    colliderUrl?: string,
+    colliderShape?: {
+        shape: string,
+        arguments: number[]
+    },
+    rotationForValue: Record<string, THREE.QuaternionTuple | THREE.QuaternionTuple[]>,
     text: DiceTextDefinition
 };
 
@@ -35,7 +39,7 @@ class DiceModel {
 
     readonly model: THREE.Mesh;
 
-    readonly rotationMap: Map<number, THREE.QuaternionLike>;
+    readonly rotationMap: Map<number, THREE.Quaternion | THREE.Quaternion[]>;
 
     get loaded() : boolean {
         return !!this.model;
@@ -45,7 +49,13 @@ class DiceModel {
         this.definition = definition;
         this.model = model;
         this.rotationMap = new Map();
-        Object.entries(definition.rotationForValue).forEach(rv => this.rotationMap.set(parseInt(rv[0]), new THREE.Quaternion(rv[1][0], rv[1][1], rv[1][2], rv[1][3])));
+        Object.entries(definition.rotationForValue).forEach(rv => { 
+            if (typeof rv[1][0] !== "number" || typeof rv[1][1] !== "number" || typeof rv[1][2] !== "number" || typeof rv[1][3] !== "number") {
+                this.rotationMap.set(parseInt(rv[0]), (rv[1] as THREE.QuaternionTuple[]).map(a => new THREE.Quaternion(a[0], a[1], a[2], a[3])));
+            } else {
+                this.rotationMap.set(parseInt(rv[0]), new THREE.Quaternion(rv[1][0], rv[1][1], rv[1][2], rv[1][3]));
+            } 
+        });
     }
 
     /**
@@ -54,8 +64,13 @@ class DiceModel {
      * @returns a new DiceModel
      */
     static async createModel(definition: DiceDefinition): Promise<DiceModel> {
-        // Send message to load collider on the physics worker
-        WORKER.loadObj(definition.denomination, new URL(definition.colliderUrl, document.baseURI).toString());
+        if (definition.colliderUrl) {
+            // Send message to load collider on the physics worker
+            WORKER.loadObj(definition.denomination, new URL(definition.colliderUrl, document.baseURI).toString());
+        }
+        else if (definition.colliderShape) {
+            WORKER.defineColliderShape(definition.denomination, definition.colliderShape.shape, ...definition.colliderShape.arguments);
+        }
         
         // Load model
         const modelPromise = new Promise<THREE.Mesh>((resolve, reject) =>
@@ -113,7 +128,10 @@ class DiceModel {
         if (!rotation)
             return new THREE.Quaternion().identity();
 
-        return new THREE.Quaternion().copy(rotation);
+        if (Array.isArray(rotation))
+            return new THREE.Quaternion().copy(rotation[Math.floor(Math.random() * rotation.length)]);
+        else
+            return new THREE.Quaternion().copy(rotation);
     }
 }
 
@@ -126,7 +144,7 @@ function registerDefinition(diceDefinition: DiceDefinition) {
 }
 
 async function loadDefinitions() {
-    const definitions = await (await fetch(MODULE.relativePath("data/definitions.json"))).json() as DiceDefinition[];
+    definitions.push(...await (await fetch(MODULE.relativePath("data/definitions.json"))).json() as DiceDefinition[]);
     
     Hooks.callAll("simply-dice.registerDiceDefinitions");
 
@@ -156,5 +174,9 @@ function forEveryModel<Result>(fn: (denomination: string, model: DiceModel) => R
     return Object.entries(diceModels).map(entry => fn(entry[0], entry[1]));
 }
 
-export { DiceModel, loadDefinitions, registerDefinition, getDiceModel, forEveryModel };
+function denominationList(): string[] {
+    return [...definitions.map(d => d.denomination)];
+}
+
+export { DiceModel, loadDefinitions, registerDefinition, getDiceModel, forEveryModel, denominationList };
 export type { DiceTextDefinition };

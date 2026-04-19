@@ -17,6 +17,9 @@ self.onmessage = async (event) => {
         case "loadObj":
             loadObj(message.data.url, message.data.denomination);
             break;
+        case "defineColliderShape":
+            defineColliderShape(message.data.denomination, message.data.shape, ...message.data.args);
+            break;
         case "init":
             physicsArea = await init(message.data);
             break;
@@ -47,14 +50,36 @@ async function loadObj(url: string, denominator: string) {
     const text = await obj.text();
     const vertexArray = new Float32Array([...text.matchAll(vertexRegex)].flat().filter(f => !f.includes("v")).map(f => parseFloat(f)));
     const indexArray = new Uint32Array([...text.matchAll(indicesRegex)].flat().filter(f => !f.includes("f")).map(f => parseInt(f) - 1));
-    const colliderDesc = RAPIER.ColliderDesc.convexMesh(vertexArray, indexArray)?.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    let colliderDesc;
+
+    colliderDesc = RAPIER.ColliderDesc.roundConvexMesh(vertexArray, indexArray, 0.05);
 
     if (!colliderDesc) {
         console.error(`Cannot create convex mesh from ${url}`);
         return;
     }
 
+    colliderDesc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS).setRestitution(0.1).setFriction(0.8);
+    
     diceObj.set(denominator, colliderDesc);
+}
+
+function defineColliderShape(denomination: string, shape: string, ...args: number[]) {
+    let colliderDesc;
+    switch (shape) {
+        case "cylinder":
+            colliderDesc = RAPIER.ColliderDesc.roundCylinder(args[0], args[1], 0.05);
+            break;
+        case "cuboid":
+            colliderDesc = RAPIER.ColliderDesc.roundCuboid(args[0], args[1], args[2], 0.05);
+            break;
+        default:
+            console.error(`Incorrect shape: ${shape}`);
+            return;
+    }
+
+    colliderDesc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS).setRestitution(0.1).setFriction(0.8);
+    diceObj.set(denomination, colliderDesc);
 }
 
 function addVectors(v1: RAPIER.Vector, v2: RAPIER.Vector): RAPIER.Vector {
@@ -87,6 +112,7 @@ class PhysicsArea {
 
     constructor(settings: PhysicsSettings) {
         this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+        this.world.timestep = 1 / 60;
 
         this.floor = this.world.createCollider(RAPIER.ColliderDesc.cuboid(30, 1, 30).setTranslation(0, -1, 0));
 
@@ -208,7 +234,7 @@ class PhysicsArea {
             simulating.forEach(d => d.recordStep());
 
             // If every body is sleeping, end the simulation early
-            if (!simulating.find(d => !d.rigidbody.isSleeping() && d.inactiveSteps < 30)) {
+            if (!simulating.find(d => !d.rigidbody.isSleeping())) {
                 maxStepCount = i + 1;
                 break;
             }
@@ -298,7 +324,7 @@ class SimulatedDice {
     constructor(area: PhysicsArea, id: number, startTime: number, baseStepCount: number, maxStepCount: number, collider: RAPIER.ColliderDesc, position: RAPIER.Vector3, rotation: RAPIER.Quaternion) {
         this.area = area;
         this.id = id;
-        this.rigidbody = area.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(position.x, position.y, position.z).setRotation(rotation));
+        this.rigidbody = area.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(position.x, position.y, position.z).setRotation(rotation).setAngularDamping(0.5).setLinearDamping(0));
         this.collider = area.world.createCollider(collider, this.rigidbody);
         this.collider.setCollisionGroups(0b10 | (0b10 << 16));
         this.maxByteSize = SimulatedDice.toByteSize(maxStepCount);
@@ -333,10 +359,19 @@ class SimulatedDice {
             }
         }
 
-        if (sqrMagnitude(this.rigidbody.linvel()) < 0.0001 && sqrMagnitude(this.rigidbody.angvel()) < 0.0001)
-            this.inactiveSteps++;
-        else
-            this.inactiveSteps = 0;
+        if (!this.rigidbody.isSleeping()) {
+            if (sqrMagnitude(this.rigidbody.linvel()) < 0.0002 && sqrMagnitude(this.rigidbody.angvel()) < 0.0002)
+            {
+                this.inactiveSteps++;
+                if (this.inactiveSteps >= 30) {
+                    this.rigidbody.setLinvel({ x: 0, y: 0, z: 0 }, false);
+                    this.rigidbody.setAngvel({ x: 0, y: 0, z: 0 }, false);
+                    this.rigidbody.sleep();
+                }
+            }
+            else
+                this.inactiveSteps = 0;
+        }
 
         this.posRot[stepIndex] = position.x;
         this.posRot[stepIndex + 1] = position.y;

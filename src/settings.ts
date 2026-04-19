@@ -1,4 +1,5 @@
 import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
+import { DiceMaterialsConfigWindow } from "dice-config";
 import { DiceMaterialConfigGroup } from "dice-materials";
 import * as WORKER from "physics-worker-handler";
 
@@ -54,7 +55,14 @@ export function registerSettings() {
         onChange: value => game.simplyDice.diceArea?.updateContainerStyle() });
     registerSetting({ id: SETTING.SOUNDS, type: Boolean, default: true, scope: "client" });
 
-    game.settings.register(MODULE.id, SETTING.DICE_MATERIALS, { name: SETTING.DICE_MATERIALS.capitalize(), type: new UserDiceConfigField(), default: {}, scope: "user", config: false});
+    game.settings.register(MODULE.id, SETTING.DICE_MATERIALS, { name: "SIMPLY-DICE.Settings.DiceMaterials", type: new UserDiceConfigField(), default: {}, scope: "user", config: false});
+
+    game.settings.registerMenu(MODULE.id, SETTING.DICE_MATERIALS, { 
+        name: "SIMPLY-DICE.Settings.DiceMaterials", 
+        hint: "SIMPLY-DICE.Settings.DiceMaterialsHint", 
+        label: "SIMPLY-DICE.Settings.DiceMaterialsLabel",
+        icon: "fa-solid fa-dice",
+        type: DiceMaterialsConfigWindow });
 }
 
 function registerSetting(setting: { id: string, type: any, default: any, choices?: Record<string, unknown>, scope: "world" | "user" | "client", onChange?: (choice: unknown) => void | Promise<void>, requiresReload?: boolean}) {

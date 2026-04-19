@@ -1,6 +1,6 @@
 import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
 import * as THREE from "three/webgpu";
-
+import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
 
 class TextureManager {
     imageLoader: THREE.ImageBitmapLoader;
@@ -9,11 +9,13 @@ class TextureManager {
 
     textureCache: Map<string, THREE.Texture>;
 
-    missingImage!: ImageBitmap;
+    missingImage?: ImageBitmap;
 
     white: THREE.Texture;
 
     blue: THREE.Texture;
+
+    environmentTexture: THREE.Texture;
 
     constructor() {
         THREE.Cache.enabled = true;
@@ -26,6 +28,13 @@ class TextureManager {
         this.white.needsUpdate = true;
         this.blue = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]));
         this.blue.needsUpdate = true;
+        
+        const loader = new EXRLoader();
+        this.environmentTexture = loader.load(MODULE.relativePath("textures/clarens_midday_1k.exr"), texture => {
+                texture.mapping = THREE.EquirectangularReflectionMapping;
+                texture.colorSpace = THREE.LinearSRGBColorSpace;
+                texture.flipY = false;
+            });
     }
 
     loadImage(url: string, callback?: (image: ImageBitmap) => void, onError?: (err: unknown) => void) {

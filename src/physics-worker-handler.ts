@@ -49,6 +49,23 @@ function loadObj(denomination: string, url: string) {
 }
 
 /**
+ * Create a collider based on a specific shape
+ * @param denomination Dice denomination
+ * @param shape Collider shape
+ * @param args Arguments to pass to the shape creation
+ */
+function defineColliderShape(denomination: string, shape: string, ...args: number[]) {
+    send({
+        type: "defineColliderShape",
+        data: {
+            denomination,
+            shape,
+            args
+        }
+    });
+}
+
+/**
  * Initialize physics
  */
 function initPhysicsWorld() {
@@ -105,4 +122,4 @@ function removeDice(id: number) {
     });
 }
 
-export { startWorker, loadObj, initPhysicsWorld, resizeArea, updateSettings, startSimulation, removeDice }
+export { startWorker, loadObj, defineColliderShape, initPhysicsWorld, resizeArea, updateSettings, startSimulation, removeDice }

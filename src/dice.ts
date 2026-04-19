@@ -44,7 +44,7 @@ class DiceObject {
 
     maxLifetime: number;
 
-    targetResult: number;
+    targetResult?: number;
 
     rotationOffset: THREE.Quaternion;
 
@@ -58,7 +58,7 @@ class DiceObject {
         return this.lifetime > 0;
     }
 
-    constructor(id: number, diceModel: DiceModel, materials: DiceMaterialSet, targetResult: number, rollId?: number, isSecret?: boolean) {
+    constructor(id: number, diceModel: DiceModel, materials: DiceMaterialSet, targetResult?: number, rollId?: number, isSecret?: boolean) {
         this.id = id;
         this.rollId = rollId;
         this.running = false;
@@ -81,23 +81,26 @@ class DiceObject {
      * @param rotation Rotation of the dice
      * @returns Value of the dice, or undefined if no result
      */
-    rotationFaceValue(rotation: THREE.QuaternionLike): number | undefined {
-        let closestValue: number | undefined = undefined;
+    rotationFaceValue(rotation: THREE.QuaternionLike): THREE.Quaternion | undefined {
+        let closestValue: THREE.Quaternion | undefined = undefined;
         let closestDot = -Infinity;
         const valueRotation = new THREE.Quaternion();
         const diceUp = new THREE.Vector3();
         for (const rv of this.diceModel.rotationMap) {
-            valueRotation.copy(rv[1]).invert();
-            diceUp.set(0, 1, 0).applyQuaternion(valueRotation).applyQuaternion(rotation);
+            const sub = Array.isArray(rv[1]) ? rv[1] : [rv[1]];
+            for (const rot of sub) {
+                valueRotation.copy(rot).invert();
+                diceUp.set(0, 1, 0).applyQuaternion(valueRotation).applyQuaternion(rotation);
 
-            const dot = diceUp.dot(UTILS.VectorUp);
-            if (dot > closestDot) {
-                closestDot = dot;
-                closestValue = rv[0];
+                const dot = diceUp.dot(UTILS.VectorUp);
+                if (dot > closestDot) {
+                    closestDot = dot;
+                    closestValue = rot;
+                }
             }
         }
 
-        return closestValue;
+        return valueRotation.copy(closestValue ?? UTILS.QuaternionIdentity);
     }
 
     /**
@@ -124,11 +127,11 @@ class DiceObject {
             steps
         };
 
-        if (!this.secret) {
+        if (!this.secret && this.targetResult !== undefined) {
             const currentFaceValue = this.rotationFaceValue(steps[this.simulation.steps.length - 1].rotation);
 
             if (currentFaceValue !== undefined)
-                this.rotationOffset.copy(this.diceModel.getRotationForValue(currentFaceValue).invert().multiply(this.diceModel.getRotationForValue(this.targetResult)));
+                this.rotationOffset.copy(currentFaceValue.invert().multiply(this.diceModel.getRotationForValue(this.targetResult)));
         }
         scene.add(this.graphics);
         this.started = true;
@@ -162,8 +165,7 @@ class DiceObject {
         }
 
         if (!this.isAlive) {
-            this.tempMaterials.forEach(m => m.dispose());
-            this.tempMaterials.length = 0;
+            this.die();
             return;
         }
 
@@ -205,6 +207,11 @@ class DiceObject {
                 resolve();
             }
         }
+    }
+
+    die() {
+        this.tempMaterials.forEach(m => m.dispose());
+        this.tempMaterials.length = 0;
     }
 
     /**

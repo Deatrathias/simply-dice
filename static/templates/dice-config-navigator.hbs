@@ -1,0 +1,11 @@
+<div class="navigation flexrow">
+    {{#each path as |item|}}
+    <div class="key {{#if item.notLast}}clickable{{/if}}" data-path="{{item.path}}" data-action="navigate">
+        {{#if item.icon}}<i class="fa-solid fa-{{item.icon}}"></i>{{/if}}
+        <span>{{localize item.label}}</span>
+    </div>
+    {{#if item.hasChild}}
+        <div class="arrow clickable" data-action="navigation-arrow" data-path="{{item.path}}">></div>
+    {{/if}}
+    {{/each}}
+</div>

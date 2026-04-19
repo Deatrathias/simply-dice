@@ -1,5 +1,53 @@
 [
     {
+        "denomination": "c",
+        "modelUrl": "modules/simply-dice/models/d2.glb",
+        "colliderShape": {
+            "shape": "cylinder",
+            "arguments": [0.15, 0.75]
+        },
+        "rotationForValue": {
+            "0": [1, 0, 0, 0],
+            "1": [0, 0, 0, 1]
+        },
+        "text": {
+            "height": 300,
+            "maxWidth": 300,
+            "items": [{
+                "label": "T",
+                "position": [256, 256]
+            },
+            {
+                "label": "H",
+                "position": [768, 256]
+            }]
+        }
+    },
+    {
+        "denomination": "d2",
+        "modelUrl": "modules/simply-dice/models/d2.glb",
+        "colliderShape": {
+            "shape": "cylinder",
+            "arguments": [0.15, 0.75]
+        },
+        "rotationForValue": {
+            "1": [1, 0, 0, 0],
+            "2": [0, 0, 0, 1]
+        },
+        "text": {
+            "height": 300,
+            "maxWidth": 300,
+            "items": [{
+                "label": "1",
+                "position": [256, 256]
+            },
+            {
+                "label": "2",
+                "position": [768, 256]
+            }]
+        }
+    },
+    {
         "denomination": "d4",
         "modelUrl": "modules/simply-dice/models/d4.glb",
         "colliderUrl": "modules/simply-dice/colliders/d4.obj",
@@ -73,7 +121,10 @@
     {
         "denomination": "d6",
         "modelUrl": "modules/simply-dice/models/d6.glb",
-        "colliderUrl": "modules/simply-dice/colliders/d6.obj",
+        "colliderShape": {
+            "shape": "cuboid",
+            "arguments": [0.5, 0.5, 0.5]
+        },
         "rotationForValue": {
             "1": [1, 0, 0, 0],
             "2": [0.7071067811865475, 0, 0, 0.7071067811865476],
@@ -471,6 +522,47 @@
             {
                 "label": "20",
                 "position": [900, 720]
+            }]
+        }
+    },
+    {
+        "denomination": "f",
+        "modelUrl": "modules/simply-dice/models/d6.glb",
+        "colliderShape": {
+            "shape": "cuboid",
+            "arguments": [0.5, 0.5, 0.5]
+        },
+        "rotationForValue": {
+            "-1": [[1, 0, 0, 0], [0.7071067811865475, 0, 0, 0.7071067811865476]],
+            "0": [[0.5, -0.5, -0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
+            "1": [[0, 0.7071067811865472, 0.7071067811865477, 0], [0, 0, 0, 1]]
+        },
+        "text": {
+            "height": 320,
+            "maxWidth": 320,
+            "items": [{
+                "label": "-",
+                "position": [170, 170]
+            },
+            {
+                "label": "-",
+                "position": [510, 170]
+            },
+            {
+                "label": "",
+                "position": [850, 170]
+            },
+            {
+                "label": "",
+                "position": [170, 510]
+            },
+            {
+                "label": "+",
+                "position": [510, 510]
+            },
+            {
+                "label": "+",
+                "position": [850, 510]
             }]
         }
     }

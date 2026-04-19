@@ -1,0 +1,36 @@
+<div class="flexcol">
+    <div class="flexrow">
+        <div class="settings">
+            <fieldset>
+                <legend>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.HEADERS.material"}}</legend>
+                {{formField fields.usePlayerColor value=config.usePlayerColor}}
+                {{formField fields.color value=config.color}}
+                {{formField fields.colorMap value=config.colorMap}}
+                {{formField fields.roughness value=config.roughness}}
+                {{formField fields.roughnessMap value=config.roughnessMap}}
+                {{formField fields.metalness value=config.metalness}}
+                {{formField fields.metalnessMap value=config.metalnessMap}}
+                {{formField fields.emissiveColor value=config.emissiveColor}}
+                {{formField fields.emissiveIntensity value=config.emissiveIntensity}}
+                {{formField fields.emissiveMap value=config.emissiveMap}}
+                {{formField fields.normalMap value=config.normalMap}}
+                {{formField fields.normalScale value=config.normalScale}}
+            </fieldset>
+            {{#if showText}}
+            <fieldset>
+                <legend>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.HEADERS.text"}}</legend>
+                {{formField fields.text.fields.font value=config.text.font}}
+                {{formField fields.text.fields.weight value=config.text.weight localize=true}}
+                {{formField fields.text.fields.color value=config.text.color}}
+                {{formField fields.text.fields.opacity value=config.text.opacity}}
+                {{formField fields.text.fields.outlineColor value=config.text.outlineColor}}
+                {{formField fields.text.fields.outlineOpacity value=config.text.outlineOpacity}}
+                {{formField fields.text.fields.emissiveColor value=config.text.emissiveColor}}
+                {{formField fields.text.fields.emissiveIntensity value=config.text.emissiveIntensity}}
+                {{formField fields.text.fields.bump value=config.text.bump}}
+            </fieldset>
+            {{/if}}
+        </div>
+        <div class="preview"></div>
+    </div>
+</div>

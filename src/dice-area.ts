@@ -13,6 +13,7 @@ import * as TSL from "three/tsl";
 import BloomNode, { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { debugging } from "hooks";
 import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
+import { DiceMaterialSet, UserDiceMaterials } from "dice-materials";
 
 // That function is missing for some reason
 declare module "three/webgpu" {
@@ -42,6 +43,10 @@ type DiceTermParameter = {
         result: number;
     }[]
 }
+
+type TryRollParameters = RollParameters & {
+    materials?: UserDiceMaterials
+};
 
 /**
  * Main dice area for rendering and starting rolls
@@ -155,13 +160,13 @@ class DiceArea {
         this.deltaTimeAccumulator = 0;
         const scenePass = TSL.pass(this.scene, this.camera);
         this.bloomStrength = TSL.uniform(1);
-        this.bloomThreshold = TSL.uniform(5);
+        this.bloomThreshold = TSL.uniform(3);
         this.bloomProcess = bloom(scenePass, 0, 0, 1);
         this.bloomProcess.strength = this.bloomStrength;
         this.bloomProcess.threshold = this.bloomThreshold;
         this.toneMappingIntensity = TSL.uniform(1);
         this.renderPipeline = new THREE.RenderPipeline(this.renderer);
-        this.renderPipeline.outputNode = TSL.renderOutput(this.mergeBloom(scenePass, this.bloomProcess), THREE.ACESFilmicToneMapping, THREE.LinearSRGBColorSpace);
+        this.renderPipeline.outputNode = TSL.renderOutput(DiceArea.mergeBloom(scenePass, this.bloomProcess), THREE.ACESFilmicToneMapping, THREE.LinearSRGBColorSpace);
         this.renderPipeline.outputColorTransform = true;
         this.changeSizeSetting(getSetting(SETTING.DICE_SIZE), true);
         this.resizeArea();
@@ -175,7 +180,7 @@ class DiceArea {
         this.changeShadows(getSetting(SETTING.SHADOWS));
     }
 
-    mergeBloom(source: THREE.Node<"vec4">, bloom: THREE.Node<"vec4">): THREE.Node<"vec4"> {
+    static mergeBloom(source: THREE.Node<"vec4">, bloom: THREE.Node<"vec4">): THREE.Node<"vec4"> {
         return TSL.vec4(source.add(bloom).rgb, source.a);
     }
 
@@ -210,14 +215,9 @@ class DiceArea {
         if (!game.simplyDice.textureManager)
             return;
 
-        const loader = new EXRLoader();
-        this.defaultEnvironment = TSL.pmremTexture(loader.load(MODULE.relativePath("textures/clarens_midday_1k.exr"), texture => {
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-            texture.colorSpace = THREE.SRGBColorSpace;
-            texture.flipY = false;
-            if (!getSetting<boolean>(SETTING.IMMERSIVE_ENVIRONMENT))
-                this.scene.environmentNode = this.defaultEnvironment;
-        }));
+        this.defaultEnvironment = TSL.pmremTexture(game.simplyDice.textureManager.environmentTexture);
+        if (!getSetting<boolean>(SETTING.IMMERSIVE_ENVIRONMENT))
+            this.scene.environmentNode = this.defaultEnvironment;
         
         // Only refresh the canvas texture when the canvas is updated
         canvas.app?.ticker.add((t) => {
@@ -317,7 +317,6 @@ class DiceArea {
      */
     cullExtraDice() {
         if (this.maxDice && this.allDice.length > this.maxDice) {
-            console.log(this.allDice.length - this.maxDice);
             const toRemove = this.allDice.length - this.maxDice;
             for (let i = 0; i < toRemove; i++) {
                 const dice = this.allDice[i];
@@ -449,32 +448,6 @@ class DiceArea {
         this.debugLine.geometry.setAttribute("color", new THREE.BufferAttribute(buffers.colors, 4));
     }
 
-    /**
-     * On roll evaluate wrapper
-     * @param wrapped original function
-     * @param roll Evaluated roll
-     * @param options Evaluated roll options
-     * @returns Rolled
-     */
-    /*async onEvaluate(wrapped: (args?: EvaluateRollParams) => Promise<Rolled<Roll>>, roll: Roll, options?: EvaluateRollParams): Promise<Rolled<Roll>> {
-        const diceToRoll = [];
-        if (this.can3dRoll(roll)) {
-            diceToRoll.push(...roll.dice.filter(d => !(d as any)._simplyDiceRolled));
-            diceToRoll.forEach(d => (d as any)._simplyDiceRolled = true);
-        }
-        console.log(roll);
-
-        const result = await wrapped(options);
-
-        if (diceToRoll.length > 0) {
-            const promise = this.rollAndWait(diceToRoll);
-            if (getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
-                await promise;
-            result.options["simplyDice-noSound"] = true;
-        }
-        return result;
-    }*/
-
     async triggerRoll(roll: Roll, message?: ChatMessage): Promise<boolean> {
         let played = false;
         if (this.can3dRoll(roll)) {
@@ -570,7 +543,7 @@ class DiceArea {
      * Add a roll from another player to be displayed
      * @param roll 
      */
-    enqueueRoll(roll: RollParameters) {
+    enqueueRoll(roll: TryRollParameters) {
         roll.createdAt = Date.now();
         this.rollStack.push(roll);
     }
@@ -593,6 +566,12 @@ class DiceArea {
             if (this.maxDice && count >= this.maxDice)
                 break;
 
+            let userMaterials;
+            if ((params as TryRollParameters).materials)
+                userMaterials = (params as TryRollParameters).materials;
+            else 
+                userMaterials = game.simplyDice.userMaterials?.get(params.userId);
+
             this.rng.seed(params.seed);
 
             const secret = params.visibility.users && params.visibility.users.length > 0 && !params.visibility.users.includes(game.userId) && (params.visibility.blind === undefined || params.visibility.blind);
@@ -610,12 +589,9 @@ class DiceArea {
                 effectiveDiceTerms.push(term);
                 const diceCount = term.number ?? 0;
                 for (let i = 0; i < diceCount; i++) {
-                    const result = term.results[i].result;
-                    // If there is no rotation for the result, ignore the dice
-                    if (!diceModel.rotationMap.has(result)) 
-                        continue;
+                    const result = term.results[i]?.result;
 
-                    const materialSet = game.simplyDice.userMaterials?.get(params.userId)?.getMaterialSet(term.denomination);
+                    const materialSet = userMaterials?.getMaterialSet(term.denomination);
                     if (!materialSet)
                         continue;
 
@@ -675,6 +651,16 @@ class DiceArea {
             this.collisionsSet = SortedSet.from(this.collisionsSet, [...data.collisions].map(c => this.timer.getElapsed() + c * data.timestep));
     }
 
+    clear() {
+        this.allDice.forEach(d => {
+            d.clearSimulation();
+            d.die();
+            WORKER.removeDice(d.id);
+            this.scene.remove(d.graphics);
+        });
+        this.allDice.length = 0;
+    }
+
     debugWindowRotation(x: number, y: number, z: number) {
         if (!this.debugModel)
             return;
@@ -693,4 +679,4 @@ class DiceArea {
 }
 
 export { DiceArea, initDiceArea };
-export type { RollParameters };
+export type { RollParameters, TryRollParameters };
