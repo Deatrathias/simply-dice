@@ -3,16 +3,18 @@ import { DiceModel, DiceTextDefinition, forEveryModel } from "dice-definition";
 import { SETTING } from "settings";
 import * as TSL from "three/tsl";
 import * as THREE from "three/webgpu";
-import { colorToStyle } from "utils";
+import { cleanup, colorToStyle } from "utils";
+
+const { SchemaField, ColorField, FilePathField, NumberField, StringField, TypedObjectField, BooleanField, AlphaField } = foundry.data.fields;
 
 type DiceMaterialConfig = {
-    color: number | "user",
+    color: string | Color | "user",
     colorMap: string | null,
     roughness: number,
     roughnessMap: string | null,
     metalness: number,
     metalnessMap: string | null,
-    emissiveColor: number,
+    emissiveColor: string | Color,
     emissiveIntensity: number,
     emissiveMap: string | null,
     normalMap: string | null,
@@ -21,12 +23,15 @@ type DiceMaterialConfig = {
 }
 
 type DiceMaterialTextConfig = {
+    show: boolean,
     font: string,
     weight: string,
-    color: number,
-    emissiveColor: number,
+    color: string | Color,
+    opacity: number,
+    emissiveColor: string | Color,
     emissiveIntensity: number,
-    outlineColor: number,
+    outlineColor: string | Color,
+    outlineOpacity: number,
     bump: number,
     symbols?: Record<string, DiceMaterialSymbolConfig>
 }
@@ -44,18 +49,21 @@ const defaultMaterialConfig = {
     roughnessMap: null,
     metalness: 0,
     metalnessMap: null,
-    emissiveColor: 0,
+    emissiveColor: "#000000",
     emissiveIntensity: 1,
     emissiveMap: null,
     normalMap: null,
     normalScale: 1,
     text: {
+        show: true,
         font: "Signika",
         weight: "normal",
-        color: 0xffffffff,
-        emissiveColor: 0,
+        color: "#ffffff",
+        opacity: 1,
+        emissiveColor: "#000000",
         emissiveIntensity: 1,
-        outlineColor: 0xff000000,
+        outlineColor: "#000000",
+        outlineOpacity: 1,
         bump: -1
     }
 } satisfies DiceMaterialConfig;
@@ -67,6 +75,60 @@ type DiceMaterialSubmat = "faces" | "facesSecret" | "edges";
 type DiceMaterialSet = {
     [K in DiceMaterialSubmat]: DiceMaterial
 }
+
+class ColorOrUserField extends ColorField {
+    override initialize(value: unknown, model?: foundry.abstract.DataModel, options?: object): foundry.utils.Color | null {
+        if (value === "user")
+            return value as any as foundry.utils.Color;
+
+        return super.initialize(value, model, options);
+    }
+
+    protected override _cast(value: unknown): unknown {
+        if (value === "user")
+            return value;
+
+        return super._cast(value);
+    }
+
+    protected override _validateType(value: unknown): boolean {
+        if (value === "user")
+            return true;
+        
+        return super._validateType(value);
+    }
+}
+
+const diceMaterialConfigSchema = new SchemaField({
+    color: new ColorOrUserField({ required: false, initial: undefined }),
+    colorMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
+    roughness: new AlphaField({ required: false, initial: undefined }),
+    roughnessMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
+    metalness: new AlphaField({ required: false, initial: undefined }),
+    metalnessMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
+    emissiveColor: new ColorField({ required: false, initial: undefined }),
+    emissiveIntensity: new NumberField({ min: 0, required: false, initial: undefined }),
+    emissiveMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
+    normalMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
+    normalScale: new NumberField({ required: false, initial: undefined }),
+    text: new SchemaField({
+        show: new BooleanField({ required: false, initial: undefined }),
+        font: new StringField({ required: false, initial: undefined, choices: () => foundry.applications.settings.menus.FontConfig.getAvailableFontChoices() }),
+        weight: new StringField({ required: false, initial: undefined, choices: ["normal", "bold"] }),
+        color: new ColorField({ required: false, initial: undefined }),
+        opacity: new AlphaField({ required: false, initial: undefined }),
+        outlineColor: new ColorField({ required: false, initial: undefined }),
+        outlineOpacity: new AlphaField({ required: false, initial: undefined }),
+        emissiveColor: new ColorField({ required: false, initial: undefined }),
+        emissiveIntensity: new NumberField({ min: 0, required: false, initial: undefined }),
+        bump: new NumberField({ required: false, initial: undefined }),
+        symbols: new TypedObjectField(new SchemaField({
+            url: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
+            scale: new NumberField({ required: false, initial: undefined }),
+            applyColor: new BooleanField({ required: false, initial: undefined })
+        }), { initial: {} })
+    }, { nullable: true, required: false, initial: undefined })
+});
 
 /**
  * Class to store all the materials of one user
@@ -112,6 +174,7 @@ class UserDiceMaterials {
         if (!setting)
             setting = game.settings.storage.get("user").getSetting(`${MODULE.id}.${SETTING.DICE_MATERIALS}`, this.userId)?.value as DiceMaterialConfigGroup | undefined | null ?? undefined;
         this.settingGroup = setting;
+        cleanup(this.settingGroup);
 
         forEveryModel((denomination, model) => {
             let materialSet = this.materials.get(denomination);
@@ -142,18 +205,23 @@ class UserDiceMaterials {
      * Refresh the materials based on new settings
      * @param settings Updated settings
      */
-    updateMaterials(settings?: DiceMaterialConfigGroup, force?: boolean) {
+    updateMaterials(settings?: DiceMaterialConfigGroup, force?: boolean, doSecret: boolean = true) {
         this.settingGroup = settings;
+
+        cleanup(this.settingGroup);
 
         for (const material of this.materials) {
             const configFaces = this.getDiceMaterialConfig(material[0], "faces");
             const configEdges = this.getDiceMaterialConfig(material[0], "edges");
 
             if (force || !foundry.utils.objectsEqual(material[1].faces.config, configFaces)) {
+                const skipText = !force && foundry.utils.objectsEqual(material[1].faces.config.text!, configFaces.text!);
                 material[1].faces.config = configFaces;
-                material[1].faces.buildMaterial();
-                material[1].facesSecret.config = configFaces;
-                material[1].facesSecret.buildMaterial();
+                material[1].faces.buildMaterial(skipText);
+                if (doSecret) {
+                    material[1].facesSecret.config = configFaces;
+                    material[1].facesSecret.buildMaterial(skipText);
+                }
             }
 
             if (force || !foundry.utils.objectsEqual(material[1].edges.config, configEdges)) {
@@ -194,8 +262,7 @@ class UserDiceMaterials {
         }
 
         if (result.color === "user") {
-            const userColor = game.users.get(this.userId)?.color;
-            result.color = userColor?.valueOf() ?? 0xffffffff;
+            result.color = game.users.get(this.userId)?.color.css ?? "#ffffff";
         }
 
         return result;
@@ -272,33 +339,13 @@ class DiceMaterial {
 
     textMaskMap?: ImageBitmap;
 
-    colorNode!: THREE.UniformNode<"color", THREE.Color>;
+    showTextNode?: THREE.UniformNode<"bool", boolean>;
 
-    colorMapNode!: THREE.TextureNode;
+    textEmissiveNode?: THREE.UniformNode<"color", THREE.Color>;
 
-    metalnessNode!: THREE.UniformNode<"float", number>;
+    textEmissiveIntensityNode?: THREE.UniformNode<"float", number>;
 
-    metalnessMapNode!: THREE.TextureNode;
-
-    roughnessNode!: THREE.UniformNode<"float", number>;
-
-    roughnessMapNode!: THREE.TextureNode;
-
-    emissiveColorNode!: THREE.UniformNode<"color", THREE.Color>;
-
-    emissiveIntensityNode!: THREE.UniformNode<"float", number>
-
-    emissiveMapNode!: THREE.TextureNode;
-
-    normalMapNode!: THREE.TextureNode;
-
-    normalScaleNode!: THREE.UniformNode<"float", number>;
-
-    textEmissiveNode!: THREE.UniformNode<"color", THREE.Color>;
-
-    textEmissiveIntensityNode!: THREE.UniformNode<"float", number>;
-
-    textBumpNode!: THREE.UniformNode<"float", number>;
+    textBumpNode?: THREE.UniformNode<"float", number>;
 
     constructor(config: DiceMaterialConfig, diceModel: DiceModel, submat: DiceMaterialSubmat) {
         this.config = config;
@@ -321,113 +368,68 @@ class DiceMaterial {
         this.material = new THREE.MeshStandardNodeMaterial({ side: THREE.FrontSide });
 
         const black = new THREE.Color(0, 0, 0);
-        this.colorNode = TSL.uniform(black);
-        this.colorMapNode = TSL.texture().setName("colorMap");
 
-        this.material.colorNode = TSL.mul(this.colorNode.rgb, this.colorMapNode);
-
-        this.metalnessNode = TSL.uniform(0);
-        this.metalnessMapNode = TSL.texture().setName("metalnessMap");
-        this.material.metalnessNode = TSL.mul(this.metalnessNode, this.metalnessMapNode);
-
-        this.roughnessNode = TSL.uniform(1);
-        this.roughnessMapNode = TSL.texture().setName("roughnessMap");
-        this.material.roughnessNode = TSL.mul(this.roughnessNode, this.roughnessMapNode);
-
-        this.emissiveColorNode = TSL.uniform(black);
-        this.emissiveIntensityNode = TSL.uniform(1);
-        this.emissiveMapNode = TSL.texture().setName("emissiveMap");
-        this.material.emissiveNode = TSL.mul(this.emissiveColorNode.rgb, this.emissiveIntensityNode, this.emissiveMapNode);
-
-        this.normalMapNode = TSL.texture(game.simplyDice.textureManager?.blue.clone());
-        this.normalScaleNode = TSL.uniform(1);
-        this.material.normalNode = TSL.normalMap(this.normalMapNode.rgb, TSL.vec2(this.normalScaleNode, this.normalScaleNode));
-
-        this.material.opacityNode = TSL.userData("disappear", "float");
+        const noise = game.simplyDice.textureManager!.loadTexture(MODULE.relativePath("textures/noise.png"), true)!;
+        this.material.opacityNode = TSL.texture(noise).r;
+        this.material.alphaTestNode = TSL.userData("disappear", "float").toFloat();
 
         if (this.submat === "faces" || this.submat === "facesSecret") {
-            this.material.colorNode = TSL.blendColor(this.material.colorNode, TSL.texture(this.textures.textColor));
+            this.showTextNode = TSL.uniform(true);
+            this.material.colorNode = TSL.select(this.showTextNode, TSL.blendColor(TSL.materialColor, TSL.texture(this.textures.textColor)), TSL.materialColor) as THREE.Node<"vec4">;
 
             // For emissive, we create an emissive node using the material's emissive values and combine with the text's emissive
             this.textEmissiveNode = TSL.uniform(black);
             this.textEmissiveIntensityNode = TSL.uniform(1);
 
-            this.material.emissiveNode = TSL.mul(this.textEmissiveNode.rgb, this.textEmissiveIntensityNode, TSL.texture(this.textures.textMask).a).add(this.material.emissiveNode as THREE.Node<"vec3">);
+            this.material.emissiveNode = TSL.select(this.showTextNode, 
+                TSL.mix(TSL.materialEmissive as unknown as THREE.Node<"vec3">, 
+                TSL.mul(this.textEmissiveNode.rgb, this.textEmissiveIntensityNode, 
+                TSL.texture(this.textures.textMask).r), TSL.texture(this.textures.textMask).r), 
+                TSL.materialEmissive);
 
-            this.textBumpNode = TSL.uniform(-10);
+            this.textBumpNode = TSL.uniform(-1);
             const bumpNode = TSL.bumpMap(TSL.texture(this.textures.textMask), TSL.vec2(this.textBumpNode, this.textBumpNode));
+            const maskAlpha = TSL.texture(this.textures.textMask).a;
 
             // Combine the existing normal map with the bump
             // We use a cast because Typescript declaration is lacking
-            this.material.normalNode = TSL.mix(this.material.normalNode as THREE.Node<"vec3">, bumpNode as unknown as THREE.Node<"vec3">, TSL.texture(this.textures.textMask).a);
-
-            /*this.material.colorNode = TSL.texture(this.textures.textMask);
-            this.material.opacityNode = TSL.texture(this.textures.textMask).a;
-            this.material.transparent = true;*/
+            this.material.normalNode = TSL.mix(TSL.materialNormal as THREE.Node<"vec3">, TSL.select(this.showTextNode, bumpNode, TSL.materialNormal) as THREE.Node<"vec3">, maskAlpha);
         }
-        this.material.castShadowNode = TSL.vec4(0, 0, 0, this.material.opacityNode);
+        this.material.castShadowNode = TSL.vec4(0, 0, 0, TSL.select(TSL.lessThan(this.material.alphaTestNode as THREE.Node<"float">, this.material.opacityNode as THREE.Node<"float">), TSL.float(1), TSL.float(0)));
     }
 
-    buildMaterial() {
+    buildMaterial(skipText?: boolean) {
         if (!game.simplyDice.textureManager)
             throw new Error("Texture manager not created?");
+        const texMan = game.simplyDice.textureManager;
 
-        this.colorNode.value = new THREE.Color(this.config.color ?? 0xff000000);
-        if (this.config.colorMap)
-            this.colorMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.colorMap);
-        else
-            this.colorMapNode.value = game.simplyDice.textureManager.white;
-
-        this.metalnessNode.value = this.config.metalness;
-        if (this.config.metalnessMap)
-            this.metalnessMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.metalnessMap);
-        else
-            this.metalnessMapNode.value = game.simplyDice.textureManager.white;
-
-        this.roughnessNode.value = this.config.roughness;
-        if (this.config.roughnessMap)
-            this.roughnessMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.roughnessMap);
-        else
-            this.roughnessMapNode.value = game.simplyDice.textureManager.white;
-
-        this.emissiveColorNode.value = new THREE.Color(this.config.emissiveColor);
-        this.emissiveIntensityNode.value = this.config.emissiveIntensity;
-        if (this.config.emissiveMap)
-            this.emissiveMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.emissiveMap);
-        else
-            this.emissiveMapNode.value = game.simplyDice.textureManager.white;
-
-        this.normalScaleNode.value = this.config.normalScale;
-        if (this.config.normalMap)
-            this.normalMapNode.value = game.simplyDice.textureManager.loadTexture(this.config.normalMap, undefined, true);
-        else
-            this.normalMapNode.value = game.simplyDice.textureManager.blue;
-
-        // Doing this to refresh the material that isn't normally refreshed by changing texture nodes
         this.material.setValues({
-            color: this.colorNode.value,
-            map: this.colorMapNode.value,
-            metalness: this.metalnessNode.value,
-            metalnessMap: this.metalnessMapNode.value,
-            roughness: this.roughnessNode.value,
-            roughnessMap: this.roughnessMapNode.value,
-            emissive: this.emissiveColorNode.value,
-            emissiveIntensity: this.emissiveIntensityNode.value,
-            emissiveMap: this.emissiveMapNode.value,
-            normalMap: this.normalMapNode.value,
-            normalScale: new THREE.Vector2(this.normalScaleNode.value, this.normalScaleNode.value)
+            color: typeof this.config.color !== "string" ? this.config.color.css : this.config.color,
+            map: texMan.loadTexture(this.config.colorMap),
+            metalness: this.config.metalness,
+            metalnessMap: texMan.loadTexture(this.config.metalnessMap, true),
+            roughness: this.config.roughness,
+            roughnessMap: texMan.loadTexture(this.config.roughnessMap, true),
+            emissive: typeof this.config.emissiveColor !== "string" ? this.config.emissiveColor.css : this.config.emissiveColor,
+            emissiveIntensity: this.config.emissiveIntensity,
+            emissiveMap: texMan.loadTexture(this.config.emissiveMap),
+            normalMap: texMan.loadTexture(this.config.normalMap, true),
+            normalScale: new THREE.Vector2(this.config.normalScale, this.config.normalScale)
         });
         // Generating text labels
-        if (this.submat === "faces" || this.submat === "facesSecret") {
-            const textConfig = this.config.text!;
-            this.generateTextTexture().then(texs => {
-                if (texs.length == 2)
-                    this.updateTextures(texs[0], texs[1]);
-            });
+        if (!skipText && (this.submat === "faces" || this.submat === "facesSecret") && this.config.text) {
+            const textConfig = this.config.text;
+            this.showTextNode!.value = textConfig.show;
 
-            this.textEmissiveNode.value = new THREE.Color(textConfig.emissiveColor);
-            this.textEmissiveIntensityNode.value = textConfig.emissiveIntensity;
-            this.textBumpNode.value = textConfig.bump;
+            if (textConfig.show) {
+                this.generateTextTexture().then(texs => {
+                    if (texs.length == 2)
+                        this.updateTextures(texs[0], texs[1]);
+                });
+            }
+            this.textEmissiveNode!.value = new THREE.Color(textConfig.emissiveColor.valueOf());
+            this.textEmissiveIntensityNode!.value = textConfig.emissiveIntensity;
+            this.textBumpNode!.value = textConfig.bump;
         }
 
         this.material.needsUpdate = true;
@@ -451,7 +453,7 @@ class DiceMaterial {
         let symbolMap: Map<string, { image: HTMLImageElement, symbol: DiceMaterialSymbolConfig }> | undefined = undefined;
         if (this.submat === "faces" && config.symbols) {
             symbolMap = new Map();
-            await Promise.all(Object.entries(config.symbols).map(entry => new Promise<void>((resolve) => {
+            await Promise.all(Object.entries(config.symbols).filter(entry => entry[1].url && entry[1].url !== "").map(entry => new Promise<void>((resolve) => {
                 const image = new Image();
                 image.src = entry[1].url;
                 image.onload = () => {
@@ -477,8 +479,8 @@ class DiceMaterial {
         context.font = `${config.weight ?? ""} ${textHeight}px ${config.font}`;
         context.textAlign = "center";
         context.lineCap = "round";
-        context.fillStyle = colorToStyle(config.color);
-        context.strokeStyle = colorToStyle(config.outlineColor);
+        context.fillStyle = config.color.toString();
+        context.strokeStyle = config.outlineColor.toString();
         context.lineWidth = 5;
 
         this.drawText(context, definition, config, false, symbolMap);
@@ -509,7 +511,7 @@ class DiceMaterial {
         context.shadowOffsetX = 0;
         context.shadowOffsetY = 0;
         if (!mask) {
-            context.shadowColor = colorToStyle(config.outlineColor);
+            context.shadowColor = config.outlineColor.toString();
             context.shadowBlur = 3;
         } else {
             context.shadowColor = "black";
@@ -538,6 +540,9 @@ class DiceMaterial {
                     height = definition.maxWidth * symbol.naturalHeight / symbol.naturalWidth;
                 }
 
+                width = Math.max(width, 2);
+                height = Math.max(height, 2);
+
                 context.drawImage(symbol, 0, 0, symbol.naturalWidth, symbol.naturalHeight, -width / 2, -height / 2, width, height);
 
                 // For applying color on the image
@@ -552,7 +557,7 @@ class DiceMaterial {
                     intermediateContext.globalCompositeOperation = "source-over";
                     intermediateContext.drawImage(symbol, 0, 0, symbol.naturalWidth, symbol.naturalHeight, 0, 0, width, height);
                     intermediateContext.globalCompositeOperation = "source-atop";
-                    intermediateContext.fillStyle = colorToStyle(config.color)
+                    intermediateContext.fillStyle = config.color.toString();
                     intermediateContext.fillRect(0, 0, width, height);
 
                     context.save();
@@ -569,25 +574,25 @@ class DiceMaterial {
                 const metrics = context.measureText(label);
                 context.translate(0, metrics.actualBoundingBoxAscent / 2 - metrics.actualBoundingBoxDescent / 2);
 
-                this.write(label, context, config.color, config.outlineColor, textMaxWidth, mask);
+                this.write(label, context, config.opacity, config.outlineOpacity, textMaxWidth, mask);
 
                 if (this.submat === "faces" && textItem.distinguisher) {
-                    this.write("  .", context, config.color, config.outlineColor, textMaxWidth, mask);
+                    this.write("  .", context, config.opacity, config.outlineOpacity, textMaxWidth, mask);
                 }
             }
         }
     }
 
-    private write(text: string, context: OffscreenCanvasRenderingContext2D, color: number, outlineColor: number, maxWidth: number, mask: boolean) {
+    private write(text: string, context: OffscreenCanvasRenderingContext2D, opacity: number, outlineOpacity: number, maxWidth: number, mask: boolean) {
         if (!mask) {
             // Outline stroke
             context.save();
             context.shadowColor = "rgba(0, 0, 0, 0)";
-            context.globalAlpha = ((outlineColor >>> 24) & 255) / 255
+            context.globalAlpha = outlineOpacity
             context.strokeText(text, 0, 0, maxWidth);
             context.restore();
 
-            context.globalAlpha = ((color >>> 24) & 255) / 255;
+            context.globalAlpha = opacity;
         }
         else {
             context.strokeText(text, 0, 0, maxWidth);
@@ -623,5 +628,5 @@ class DiceMaterial {
     }
 }
 
-export { DiceMaterial, UserDiceMaterials, defaultMaterialConfig }
-export type { DiceMaterialConfig, DiceMaterialTextConfig, DiceMaterialConfigGroup, DiceMaterialSet }
+export { DiceMaterial, UserDiceMaterials, defaultMaterialConfig, diceMaterialConfigSchema }
+export type { DiceMaterialConfig, DiceMaterialTextConfig, DiceMaterialSymbolConfig, DiceMaterialConfigGroup, DiceMaterialSet }

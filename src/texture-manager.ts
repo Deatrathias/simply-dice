@@ -58,7 +58,10 @@ class TextureManager {
         return result;
     }
 
-    loadTexture(url: string, callback?: (texture: THREE.Texture) => void, nonColor: boolean = false): THREE.Texture {
+    loadTexture(url: string | null, nonColor: boolean = false, callback?: (texture: THREE.Texture) => void,): THREE.Texture | null {
+        if (!url)
+            return null;
+
         const existing = this.textureCache.get(url);
         if (existing) {
             if (callback)

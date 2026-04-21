@@ -59,7 +59,7 @@ async function loadObj(url: string, denominator: string) {
         return;
     }
 
-    colliderDesc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS).setRestitution(0.1).setFriction(0.8);
+    colliderDesc.setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS).setRestitution(0.1).setFriction(0.8);
     
     diceObj.set(denominator, colliderDesc);
 }
@@ -78,7 +78,7 @@ function defineColliderShape(denomination: string, shape: string, ...args: numbe
             return;
     }
 
-    colliderDesc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS).setRestitution(0.1).setFriction(0.8);
+    colliderDesc.setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS).setRestitution(0.1).setFriction(0.8);
     diceObj.set(denomination, colliderDesc);
 }
 
@@ -213,7 +213,8 @@ class PhysicsArea {
 
         const replayingDices = simulatedDices.filter(d => d.replaySimulation(simulationData.startTime));
 
-        const collisions = new Uint16Array(new ArrayBuffer(30 * Uint16Array.BYTES_PER_ELEMENT, { maxByteLength: 200 * Uint16Array.BYTES_PER_ELEMENT }));
+        const collisions = new Uint16Array(new ArrayBuffer(100 * Uint16Array.BYTES_PER_ELEMENT, { maxByteLength: 200 * Uint16Array.BYTES_PER_ELEMENT }));
+        const collisionTime = new Map<number, number>();
         let collisionCount = 0;
         const eventQueue = new RAPIER.EventQueue(true);
         for (let i = 0; i < maxStepCount; i++) {
@@ -230,6 +231,19 @@ class PhysicsArea {
                     collisionCount++;
                 }
             });
+            eventQueue.drainContactForceEvents((event) => {
+                
+                console.log(`${i}: ${event.totalForceMagnitude()}`);
+                if (event.maxForceMagnitude() > 15) {
+                    const existing = collisionTime.get(i);
+                    if (!existing || existing < event.maxForceMagnitude())
+                        collisionTime.set(i, event.maxForceMagnitude());
+                    if (collisionCount === 0 || collisions[collisionCount - 1] !== i) {
+                        collisions[collisionCount] = i;
+                        collisionCount++;
+                    }
+                }
+            });
             replayingDices.forEach(d => d.replaySimulationStep());
             simulating.forEach(d => d.recordStep());
 
@@ -240,6 +254,9 @@ class PhysicsArea {
             }
         }
         eventQueue.free();
+
+        
+        console.log(collisionTime);
         try {
         if (collisionCount > 0)
             collisions.buffer.resize((collisionCount - 1) * Uint16Array.BYTES_PER_ELEMENT);
@@ -255,14 +272,24 @@ class PhysicsArea {
             buffersToSend.push(copiedArray.buffer);
             return { id: d.id, posRot: copiedArray } satisfies DiceSimulation
         });
+
+        const elementSize = Uint16Array.BYTES_PER_ELEMENT + Float32Array.BYTES_PER_ELEMENT;
+        let offset = 0;
+        const collisionView = new DataView(new ArrayBuffer(collisionCount * elementSize));
+        collisionTime.entries().forEach(entry => {
+            collisionView.setUint16(offset, entry[0]);
+            collisionView.setFloat32(offset + Uint16Array.BYTES_PER_ELEMENT, entry[1]);
+            offset += elementSize;
+        });
+
         if (collisionCount > 0)
-            buffersToSend.push(collisions.buffer);
+            buffersToSend.push(collisionView.buffer);
 
         self.postMessage({
             type: "simulationComplete", data: {
                 timestep: this.world.timestep,
                 simulations,
-                collisions: collisionCount > 0 ? collisions : undefined
+                collisions: collisionCount > 0 ? collisionView.buffer : undefined
             }
         } satisfies SimulationCompleteMessage, { transfer: buffersToSend });
 

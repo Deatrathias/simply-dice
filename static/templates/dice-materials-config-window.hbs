@@ -1,36 +1,78 @@
-<div class="flexcol">
-    <div class="flexrow">
-        <div class="settings">
-            <fieldset>
-                <legend>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.HEADERS.material"}}</legend>
-                {{formField fields.usePlayerColor value=config.usePlayerColor}}
-                {{formField fields.color value=config.color}}
-                {{formField fields.colorMap value=config.colorMap}}
-                {{formField fields.roughness value=config.roughness}}
-                {{formField fields.roughnessMap value=config.roughnessMap}}
-                {{formField fields.metalness value=config.metalness}}
-                {{formField fields.metalnessMap value=config.metalnessMap}}
-                {{formField fields.emissiveColor value=config.emissiveColor}}
-                {{formField fields.emissiveIntensity value=config.emissiveIntensity}}
-                {{formField fields.emissiveMap value=config.emissiveMap}}
-                {{formField fields.normalMap value=config.normalMap}}
-                {{formField fields.normalScale value=config.normalScale}}
-            </fieldset>
-            {{#if showText}}
-            <fieldset>
-                <legend>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.HEADERS.text"}}</legend>
-                {{formField fields.text.fields.font value=config.text.font}}
-                {{formField fields.text.fields.weight value=config.text.weight localize=true}}
-                {{formField fields.text.fields.color value=config.text.color}}
-                {{formField fields.text.fields.opacity value=config.text.opacity}}
-                {{formField fields.text.fields.outlineColor value=config.text.outlineColor}}
-                {{formField fields.text.fields.outlineOpacity value=config.text.outlineOpacity}}
-                {{formField fields.text.fields.emissiveColor value=config.text.emissiveColor}}
-                {{formField fields.text.fields.emissiveIntensity value=config.text.emissiveIntensity}}
-                {{formField fields.text.fields.bump value=config.text.bump}}
-            </fieldset>
-            {{/if}}
+<div class="flexrow">
+    <div class="settings">
+        <div class="form-group">
+            <label>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.preset.label"}}</label>
+            <select name="preset">
+                <option></option>
+                {{selectOptions presets localize=true}}
+            </select>
+            <p class="hint">{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.preset.hint"}}</p>
         </div>
-        <div class="preview"></div>
+        <fieldset>
+            <legend>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.HEADERS.material"}}</legend>
+            {{formField fields.usePlayerColor value=config.usePlayerColor}}
+            {{formField fields.color value=config.color}}
+            {{formField fields.colorMap value=config.colorMap}}
+            {{formField fields.roughness value=config.roughness}}
+            {{formField fields.roughnessMap value=config.roughnessMap}}
+            {{formField fields.metalness value=config.metalness}}
+            {{formField fields.metalnessMap value=config.metalnessMap}}
+            {{formField fields.emissiveColor value=config.emissiveColor}}
+            {{formField fields.emissiveIntensity value=config.emissiveIntensity}}
+            {{formField fields.emissiveMap value=config.emissiveMap}}
+            {{formField fields.normalMap value=config.normalMap}}
+            {{formField fields.normalScale value=config.normalScale}}
+        </fieldset>
+        {{#if showText}}
+        <fieldset>
+            <legend>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.HEADERS.text"}}</legend>
+            {{formField fields.text.fields.show value=config.text.show}}
+            {{formField fields.text.fields.font value=config.text.font}}
+            {{formField fields.text.fields.weight value=config.text.weight localize=true}}
+            {{formField fields.text.fields.color value=config.text.color}}
+            {{formField fields.text.fields.opacity value=config.text.opacity}}
+            {{formField fields.text.fields.outlineColor value=config.text.outlineColor}}
+            {{formField fields.text.fields.outlineOpacity value=config.text.outlineOpacity}}
+            {{formField fields.text.fields.emissiveColor value=config.text.emissiveColor}}
+            {{formField fields.text.fields.emissiveIntensity value=config.text.emissiveIntensity}}
+            {{formField fields.text.fields.bump value=config.text.bump}}
+            {{#if showSymbols}}
+                <div class="form-group">
+                    <label>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.symbols.label"}}</label>
+                    <div class="form-fields">
+                        <button type="button" data-action="addSymbol"><i class="fa-solid fa-plus"></i>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.symbols.add"}}</button>
+                    </div>
+                    <p class="hint">{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.symbols.hint"}}</p>
+                </div>
+                {{#each config.text.symbols as |symbol|}}
+                <fieldset>
+                    <legend>{{symbol.key}}</legend>
+                    <input type="hidden" name="text.symbols.{{symbol.key}}.key" value="{{symbol.key}}" />
+                    <div class="form-group">
+                        <label>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.symbols.url.label"}}</label>
+                        <div class="form-fields">
+                            <file-picker name="text.symbols.{{symbol.key}}.url" type="image" value="{{symbol.url}}"></file-picker>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.symbols.scale.label"}}</label>
+                        <div class="form-fields">
+                            <input type="range" name="text.symbols.{{symbol.key}}.scale" min="0.01" max="1" step="0.01" value="{{symbol.scale}}" />
+                        </div>
+                        <p class="hint">{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.symbols.scale.hint"}}</p>
+                    </div>
+                    <div class="form-group">
+                        <label>{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.symbols.applyColor.label"}}</label>
+                        <div class="form-fields">
+                            <input type="checkbox" name="text.symbols.{{symbol.key}}.applyColor" {{#if symbol.applyColor}}checked{{/if}} />
+                        </div>
+                        <p class="hint">{{localize "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.symbols.applyColor.hint"}}</p>
+                    </div>
+                    <button type="button" data-action="removeSymbol" data-key="{{symbol.key}}"><i class="fa-solid fa-minus"></i>Remove</button>
+                </fieldset>
+                {{/each}}
+            {{/if}}
+        {{/if}}
     </div>
+    <div class="preview"></div>
 </div>

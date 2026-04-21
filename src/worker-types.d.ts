@@ -91,5 +91,5 @@ export type DiceSimulation = {
 type SimulationCompleteData = {
     timestep: number,
     simulations: Array<DiceSimulation>,
-    collisions?: Uint16Array
+    collisions?: ArrayBuffer
 }

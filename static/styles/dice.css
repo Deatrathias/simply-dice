@@ -18,11 +18,11 @@
 .simply-dice-materials-config .navigation > * {
     font-size: var(--font-size-20);
     font-weight: bold;
-    margin: 2px;
+    max-width: fit-content;
     padding: 3px;
+    margin: 2px;
     border: 1px solid var(--color-fieldset-border);
     background-color: var(--content-link-background);
-    max-width: fit-content;
 }
 
 .simply-dice-materials-config .navigation .clickable:hover {

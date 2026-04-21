@@ -3,6 +3,7 @@ import { DatabaseUpdateOperation } from "@7h3laughingman/foundry-types/common/ab
 import { ChatMessageCreateOperation } from "@7h3laughingman/foundry-types/common/documents/chat-message.mjs";
 import BaseUser from "@7h3laughingman/foundry-types/common/documents/user.mjs";
 import { initDiceArea } from "dice-area.ts";
+import { loadPresets } from "dice-config";
 import { loadDefinitions } from "dice-definition.ts";
 import { DiceMaterialConfigGroup, UserDiceMaterials } from "dice-materials";
 import * as WORKER from "physics-worker-handler.ts";
@@ -18,6 +19,7 @@ Hooks.on("init", () => {
     initSocket();
     WORKER.startWorker();
     loadDefinitions();
+    loadPresets();
 
     libWrapper.register(MODULE.id, "ChatMessage._preCreateOperation", preCreateMessage);
 });

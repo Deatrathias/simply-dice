@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { getSetting, MODULE } from "@7h3laughingman/foundry-helpers/utilities";
+import { getSetting } from "@7h3laughingman/foundry-helpers/utilities";
 import { getDiceModel } from "dice-definition.ts";
 import { DiceObject } from "dice.ts";
 import * as WORKER from "physics-worker-handler.ts";
@@ -12,8 +12,7 @@ import { SETTING } from "settings";
 import * as TSL from "three/tsl";
 import BloomNode, { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { debugging } from "hooks";
-import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
-import { DiceMaterialSet, UserDiceMaterials } from "dice-materials";
+import { UserDiceMaterials } from "dice-materials";
 
 // That function is missing for some reason
 declare module "three/webgpu" {
@@ -102,6 +101,8 @@ class DiceArea {
 
     collisionsSet: SortedSet<number>;
 
+    collisionMap: Map<number, number>;
+
     areaSize = new THREE.Vector2();
 
     debugModel?: THREE.Object3D;
@@ -176,6 +177,7 @@ class DiceArea {
         this.fovRatio = this.camera.position.y * (Math.tan(Math.toRadians(this.camera.fov / 2)));
         this.rollPromiseResolve = new Map();
         this.collisionsSet = SortedSet.empty();
+        this.collisionMap = new Map();
         this.maxDice = getSetting(SETTING.MAX_DICE_ON_SCREEN);
         this.changeShadows(getSetting(SETTING.SHADOWS));
     }
@@ -431,8 +433,18 @@ class DiceArea {
 
         this.renderPipeline.render();
 
+        const soundEvents = this.collisionMap.entries().filter(k => k[0] < elapsed).toArray();
+        if (soundEvents.length > 0) {
+            const volume = soundEvents.reduce((accumulator, current) => Math.max(accumulator, current[1]), 0);
+
+            if (volume > 0) 
+                playDiceSound(Math.clamp(volume / 500, 0, 1));
+
+            soundEvents.forEach(k => this.collisionMap.delete(k[0]));
+        }
+
         if ((this.collisionsSet.min() ?? Infinity) < elapsed) {
-            playDiceSound();
+            //playDiceSound();
             this.collisionsSet = this.collisionsSet.slice({ start: elapsed });
         }
 
@@ -647,8 +659,23 @@ class DiceArea {
         for (const simulation of data.simulations)
             this.allDice.find(d => d.id == simulation.id)?.runSimulation(this.scene, this.timer.getElapsed(), data.timestep, simulation.posRot);
 
-        if (data.collisions)
-            this.collisionsSet = SortedSet.from(this.collisionsSet, [...data.collisions].map(c => this.timer.getElapsed() + c * data.timestep));
+        if (data.collisions){
+            const view = new DataView(data.collisions);
+            const elementSize = Uint16Array.BYTES_PER_ELEMENT + Float32Array.BYTES_PER_ELEMENT;
+
+            for (let offset = 0; offset < data.collisions.byteLength; offset += elementSize) {
+                const collision = { 
+                    time: view.getUint16(offset) * data.timestep + this.timer.getElapsed(), 
+                    volume: view.getFloat32(offset + Uint16Array.BYTES_PER_ELEMENT) 
+                };
+
+                const existing = this.collisionMap.get(collision.time);
+                if (!existing || existing < collision.volume)
+                    this.collisionMap.set(collision.time, collision.volume);
+            }
+        }
+            
+            //this.collisionsSet = SortedSet.from(this.collisionsSet, [...data.collisions].map(c => this.timer.getElapsed() + c * data.timestep));
     }
 
     clear() {

@@ -29,8 +29,8 @@
             "AntialiasingHint": "Enable anti-aliasing. Requires reload.",
             "DisplayOnTop": "Display on Top",
             "DisplayOnTopHint": "Render dice above UI elements.",
-            "Sounds": "Dice Sounds",
-            "SoundsHint": "Play sounds when dice are rolling.",
+            "SoundVolume": "Dice Sound Volume",
+            "SoundVolumeHint": "Volume of sounds when dice are rolling.",
             "DiceMaterials": "User Dice Materials",
             "DiceMaterialsHint": "Appearance of your own dice.",
             "DiceMaterialsLabel": "Configure Dice Materials"
@@ -50,16 +50,30 @@
             "d20": "D20",
             "d100": "D100"
         },
+        "Presets": {
+            "plastic": "Plastic",
+            "rock": "Rock",
+            "wood": "Wood",
+            "metal": "Metal",
+            "marble": "Marble",
+            "lightning": "Lightning"
+        },
         "DiceMaterialsConfigWindow": {
             "HEADERS": {
                 "material": "Material",
-                "text": "Text"
+                "text": "Text",
+                "addSymbolHeader": "Symbol for label"
             },
             "BUTTONS": {
-                "reset": "Reset to parent",
+                "submit": "Save Materials",
+                "reset": "Reset to Parent",
                 "try": "Try Roll"
             },
             "FIELDS": {
+                "preset": {
+                    "label": "Apply Preset",
+                    "hint": "Apply a preset to this element."
+                },
                 "usePlayerColor": { 
                     "label": "Use Player Color", 
                     "hint": "Use the color defined in user config." 
@@ -108,6 +122,10 @@
                     "hint": "Intensity of the effect of the normal map."
                 },
                 "text": {
+                    "show": {
+                        "label": "Show Text",
+                        "hint": "Display the labels or not."
+                    },
                     "font": {
                         "label": "Font"
                     },
@@ -140,6 +158,22 @@
                     "bump": {
                         "label": "Bump",
                         "hint": "Height of the bump made by the text. Negative numbers cause a crease instead."
+                    },
+                    "symbols": {
+                        "label": "Symbols",
+                        "hint": "Define images to replace certain labels.",
+                        "add": "Add",
+                        "url": {
+                            "label": "URL"
+                        },
+                        "scale": {
+                            "label": "Scale",
+                            "hint": "Change the size of the image."
+                        },
+                        "applyColor": {
+                            "label": "Apply Color",
+                            "hint": "Apply the text color to the image."
+                        }
                     }
                 }
             }

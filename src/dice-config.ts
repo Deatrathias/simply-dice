@@ -3,7 +3,7 @@ import { ApplicationClosingOptions, ApplicationConfiguration, ApplicationFormCon
 import { HandlebarsRenderOptions, HandlebarsTemplatePart } from "@7h3laughingman/foundry-types/client/applications/api/_module.mjs";
 import * as THREE from "three/webgpu";
 import * as TSL from "three/tsl";
-import { DiceMaterialConfig, DiceMaterialConfigGroup, UserDiceMaterials } from "dice-materials";
+import { DiceMaterialConfig, DiceMaterialConfigGroup, diceMaterialConfigSchema, DiceMaterialSymbolConfig, UserDiceMaterials } from "dice-materials";
 import { denominationList, forEveryModel, getDiceModel } from "dice-definition";
 import { SETTING } from "settings";
 import * as UTILS from "utils";
@@ -11,8 +11,8 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { DiceArea, TryRollParameters } from "dice-area";
 import { ContextMenuEntry } from "@7h3laughingman/foundry-types/client/applications/ux/context-menu.mjs";
 
-const { SchemaField, BooleanField, ColorField, FilePathField, NumberField, StringField } = foundry.data.fields;
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+const { SchemaField, BooleanField, ColorField, FilePathField, NumberField, StringField, ArrayField, AlphaField } = foundry.data.fields;
+const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
 function toStringNull(s: string): string | null {
     if (!s)
@@ -21,13 +21,28 @@ function toStringNull(s: string): string | null {
     return trimmed === "" ? null : trimmed;
 }
 
-function toColor(s: string | undefined): number {
+function toColor(s: string | undefined): foundry.utils.Color {
     if (s === undefined)
-        return 0;
+        return new Color(0);
     const color = foundry.utils.Color.fromString(s);
     if (!color.valid)
-        return 0;
-    return color.valueOf();
+        return new Color(0);
+    return color;
+}
+
+type Preset = {
+    name: string,
+    label: string
+} & DeepPartial<DiceMaterialConfig>;
+
+const presets = new Map<string, Preset>();
+
+async function loadPresets() {
+    const jsonPresets = await (await fetch(MODULE.relativePath("data/presets.json"))).json();
+
+    for (const preset of jsonPresets) {
+        presets.set(preset.name, preset);
+    }
 }
 
 class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -47,7 +62,9 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         actions: {
             navigate: DiceMaterialsConfigWindow.navigate,
             reset: DiceMaterialsConfigWindow.resetToParent,
-            tryRoll: DiceMaterialsConfigWindow.tryRoll
+            tryRoll: DiceMaterialsConfigWindow.tryRoll,
+            addSymbol: DiceMaterialsConfigWindow.addSymbol,
+            removeSymbol: DiceMaterialsConfigWindow.removeSymbol
         }
     } satisfies DeepPartial<ApplicationConfiguration>;
 
@@ -69,7 +86,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
 
     scene?: THREE.Scene;
 
-    camera?: THREE.PerspectiveCamera;
+    camera?: THREE.Camera;
 
     controls?: RotateControls;
 
@@ -93,9 +110,9 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         usePlayerColor: new BooleanField({ initial: true }),
         color: new ColorField({ initial: "#ffffff", nullable: false, required: true }),
         colorMap: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
-        roughness: new NumberField({ min: 0, max: 1, step: 0.01 }),
+        roughness: new AlphaField({ step: 0.01 }),
         roughnessMap: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
-        metalness: new NumberField({ min: 0, max: 1, step: 0.01 }),
+        metalness: new AlphaField({ step: 0.01 }),
         metalnessMap: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
         emissiveColor: new ColorField({ nullable: false }),
         emissiveIntensity: new NumberField({ nullable: false, min: 0 }),
@@ -103,19 +120,24 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         normalMap: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
         normalScale: new NumberField(),
         text: new SchemaField({
+            show: new BooleanField(),
             font: new StringField({ blank: false, required: true, choices: () => foundry.applications.settings.menus.FontConfig.getAvailableFontChoices() }),
             weight: new StringField({ blank: false, required: true, choices: { 
                 "normal": "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.weight.choices.normal",
                 "bold": "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.weight.choices.bold"
              }}),
             color: new ColorField({ nullable: false }),
-            opacity: new NumberField({ min: 0, max: 255, step: 1}),
+            opacity: new AlphaField({ step: 0.01 }),
             outlineColor: new ColorField({ nullable: false }),
-            outlineOpacity: new NumberField({ min: 0, max: 255, step: 1}),
+            outlineOpacity: new AlphaField({ step: 0.01 }),
             emissiveColor: new ColorField({ nullable: false }),
             emissiveIntensity: new NumberField({ nullable: false, min: 0 }),
             bump: new NumberField(),
-            symbols: new foundry.data.fields.ObjectField()
+            symbols: new ArrayField(new SchemaField({
+                url: new FilePathField({ categories: ["IMAGE"] }),
+                scale: new NumberField({ min: 0 }),
+                applyColor: new BooleanField() 
+            }))
         })
     });
 
@@ -136,12 +158,14 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         d100: "dice-d10",
         f: "plus-minus",
         faces: "square",
-        edges: "border-none"
+        edges: "draw-square"
     };
 
     contextMenu?: foundry.applications.ux.ContextMenu;
 
     static diceDenomination?: string[];
+
+    addSymbolDialog?: foundry.applications.api.DialogV2;
 
     constructor(options?: ApplicationConfiguration) {
         super(options);
@@ -160,6 +184,8 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         this.materials.settingGroup = this.configGroup;
         this.currentPath = "global";
         this.currentConfig = this.configGroup[this.currentPath];
+        diceMaterialConfigSchema.clean(this.currentConfig);
+        UTILS.cleanup(this.currentConfig);
         this.filledConfig = this.materials.getDiceMaterialConfigFromPath(this.currentPath);
         this.parentConfig = this.materials.getDiceMaterialConfigFromPath(this.parentPath());
 
@@ -207,7 +233,15 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
     }
 
     refreshPath() {
+        if (this.addSymbolDialog) {
+            this.addSymbolDialog.close();
+            this.addSymbolDialog = undefined;
+        }
         this.currentConfig = this.configGroup[this.currentPath];
+        if (!this.currentConfig)
+            this.currentConfig = {};
+        diceMaterialConfigSchema.clean(this.currentConfig);
+        UTILS.cleanup(this.currentConfig);
         this.filledConfig = this.materials.getDiceMaterialConfigFromPath(this.currentPath);
         this.parentConfig = this.materials.getDiceMaterialConfigFromPath(this.parentPath());
 
@@ -219,8 +253,9 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
     protected override async _prepareContext(options: ApplicationRenderOptions): Promise<Record<string, any>> {
         const context: Record<string, any> = await super._prepareContext(options);
         
-        if (!this.currentPath.endsWith("edges"))
-            context.showText = true;
+        context.showText = !this.currentPath.endsWith("edges");
+        context.showSymbols = !this.currentPath.startsWith("global");
+        context.presets = Object.fromEntries(presets.entries().map(k => [k[0], k[1].label]));
         context.fields = DiceMaterialsConfigWindow.#schema.fields;
         context.config = this.configToContext(this.filledConfig);
 
@@ -245,7 +280,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
                 {
                     type: "submit", 
                     icon: "fa-solid fa-floppy-disk", 
-                    label: "SETTINGS.Save"
+                    label: "SIMPLY-DICE.DiceMaterialsConfigWindow.BUTTONS.submit"
                 }];
         } else if (partId === "navigation") {
             const path = this.currentPath.split(".");
@@ -331,13 +366,13 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
 
         this.scene = new THREE.Scene();
         this.scene.backgroundNode = TSL.pmremTexture(game.simplyDice.textureManager!.environmentTexture);
-        this.scene.backgroundBlurriness = 0.1;
+        this.scene.backgroundBlurriness = 0.5;
+        this.scene.backgroundIntensity = 2;
         this.scene.environmentNode = TSL.pmremTexture(game.simplyDice.textureManager!.environmentTexture);
         this.scene.environmentIntensity = 1;
 
-        this.camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
+        this.camera = new THREE.PerspectiveCamera(20, 1, 0.01, 100);
         this.camera.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), -UTILS.HALF_PI);
-        this.camera.position.y = 12;
 
         this.scene.add(this.camera);
 
@@ -368,7 +403,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
 
         this.previewObjects?.forEach(o => this.scene!.remove(o));
         if (this.currentPath.startsWith("global")) {
-            this.camera.position.y = 12;
+            this.camera.position.y = 16;
 
             let count = 0;
             this.previewObjects = [];
@@ -394,7 +429,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
                     break;
             }
         } else {
-            this.camera.position.y = 4;
+            this.camera.position.y = 6;
 
             const denomination = this.currentPath.split(".")[0];
             const model = getDiceModel(denomination);
@@ -412,11 +447,15 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
 
     refreshMaterial() {
         this.filledConfig = this.materials.getDiceMaterialConfigFromPath(this.currentPath);
-        this.materials.updateMaterials(this.configGroup);
+        this.materials.updateMaterials(this.configGroup, false, false);
     }
 
     protected override _onClose(options: ApplicationClosingOptions) {
         super._onClose(options);
+        if (this.addSymbolDialog) {
+            this.addSymbolDialog.close();
+            this.addSymbolDialog = undefined;
+        }
         game.simplyDice.diceArea?.clear();
         this.materials.dispose();
         this.renderer?.dispose();
@@ -459,18 +498,123 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         } satisfies TryRollParameters);
     }
 
+    static addSymbol() {
+        if (!(this instanceof DiceMaterialsConfigWindow))
+            return;
+
+        if (this.addSymbolDialog) {
+            this.addSymbolDialog.close();
+            this.addSymbolDialog = undefined;
+        }
+
+        const denomination = this.currentPath.split(".")[0];
+        if (denomination === "global")
+            return;
+
+        const diceModel = getDiceModel(denomination);
+        if (!diceModel)
+            return;
+
+        const options = [...new Set(diceModel.definition.text.items.filter(i => !(this.currentConfig.text?.symbols) || !Object.hasOwn(this.currentConfig.text?.symbols, i.label))
+            .map(i => i.label).sort((a, b) => (parseInt(a) ?? 0) - (parseInt(b) ?? 0)))
+            .map(l => `<option value="${l}">${l}</option>`)].join();
+        if (options === "")
+            return;
+
+        this.addSymbolDialog = new DialogV2({
+            window: {
+                title: "SIMPLY-DICE.DiceMaterialsConfigWindow.HEADERS.addSymbolHeader"
+            },
+            content: `<form><select name="symbolKey">${options}</select></form>`,
+            buttons: [{
+                type: "submit",
+                label: "SIMPLY-DICE.DiceMaterialsConfigWindow.FIELDS.text.symbols.add",
+                icon: "fa-solid fa-plus",
+                callback: async (event, button, dialog) => {
+                    const key = (button.form?.elements.namedItem("symbolKey") as HTMLSelectElement).value;
+                    if (!key)
+                        return;
+
+                    if (!this.currentConfig.text)
+                        this.currentConfig.text = { symbols: { } };
+                    else if (!this.currentConfig.text.symbols)
+                        this.currentConfig.text.symbols = { };
+
+                    this.currentConfig.text.symbols![key] = { scale: 1, applyColor: false };
+                    this.configGroup[this.currentPath] = this.currentConfig;
+                    this.filledConfig = this.materials.getDiceMaterialConfigFromPath(this.currentPath);
+                    this.refreshMaterial();
+
+                    const scrollTop = this.element.querySelector(".settings")!.scrollTop;
+                    await this.render();
+                    this.element.querySelector(".settings")!.scrollTop = scrollTop;
+                }
+            }]
+        });
+
+        this.addSymbolDialog.render(true);
+    }
+
+    static async removeSymbol(event: PointerEvent, target: HTMLElement) {
+        if (!(this instanceof DiceMaterialsConfigWindow))
+            return;
+
+        const key = target.dataset["key"];
+        if (!key || !this.currentConfig.text?.symbols)
+            return;
+
+        delete this.currentConfig.text.symbols[key];
+
+        this.configGroup[this.currentPath] = this.currentConfig;
+        this.filledConfig = this.materials.getDiceMaterialConfigFromPath(this.currentPath);
+        this.refreshMaterial();
+
+        const scrollTop = this.element.querySelector(".settings")!.scrollTop;
+        await this.render();
+        this.element.querySelector(".settings")!.scrollTop = scrollTop;
+    }
+
     protected override _onChangeForm(formConfig: ApplicationFormConfiguration, event: Event) {
         if ((event.target as HTMLInputElement | null)?.disabled)
             return;
         super._onChangeForm(formConfig, event);
 
-        const data = new foundry.applications.ux.FormDataExtended(this.form!, { disabled: true });
-        const config = this.contextToConfig(data.object);
+        let config;
+        if ((event.target as HTMLSelectElement).name === "preset") {
+            config = this.applyPreset((event.target as HTMLSelectElement).value);
+            (event.target as HTMLSelectElement).value = "";
+            if (!config)
+                return;
+        }
+        else {
+            const data = new foundry.applications.ux.FormDataExtended(this.form!, { disabled: true });
+            config = this.contextToConfig(data.object);
+        }
         const configDiff = foundry.utils.diffObject(this.parentConfig, config);
-        this.configGroup[this.currentPath] = configDiff;
+        const validation = diceMaterialConfigSchema.validate(configDiff);
+        if (!validation) {
+            diceMaterialConfigSchema.clean(configDiff);
+            UTILS.cleanup(configDiff);
+            this.currentConfig = configDiff;
+            this.configGroup[this.currentPath] = this.currentConfig;
 
-        this.refreshMaterial();
-        this.adjustInputs();
+            this.refreshMaterial();
+            this.adjustInputs();
+        } else {
+            ui.notifications.error(validation.asError());
+        }
+    }
+
+    applyPreset(presetName: string): DeepPartial<DiceMaterialConfig> | undefined {
+        if (!presetName || presetName === "")
+            return undefined;
+
+        const preset = presets.get(presetName);
+        if (!preset)
+            return undefined;
+
+        this.render();
+        return foundry.utils.mergeObject(this.filledConfig, preset, { inplace: false, recursive: true });
     }
 
     static resetToParent() {
@@ -521,43 +665,51 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
     configToContext(config: DeepPartial<DiceMaterialConfig>): Record<string, any> {
         const context: Record<string, any> = {
             usePlayerColor: config.color !== undefined ? config.color === "user" : undefined,
-            color: config.color === "user" ? game.user.color.toString() : (config.color !== undefined ? foundry.utils.Color.from(config.color & 0xffffff).toString() : undefined),
+            color: config.color === "user" ? game.user.color : config.color,
             colorMap: config.colorMap,
             roughness: config.roughness,
             roughnessMap: config.roughnessMap,
             metalness: config.metalness,
             metalnessMap: config.metalnessMap,
-            emissiveColor: config.emissiveColor !== undefined ? foundry.utils.Color.from(config.emissiveColor).toString() : undefined,
+            emissiveColor: config.emissiveColor,
             emissiveIntensity: config.emissiveIntensity,
             emissiveMap: config.emissiveMap,
             normalMap: config.normalMap,
             normalScale: config.normalScale,
             text: (config.text ? {
-                color: config.text.color !== undefined ? foundry.utils.Color.from(config.text.color & 0xffffff).toString() : undefined,
-                opacity: config.text.color !== undefined ?  (config.text.color >>> 24) : undefined,
-                outlineColor: config.text.outlineColor !== undefined ? foundry.utils.Color.from(config.text.outlineColor & 0xffffff).toString() : undefined,
-                outlineOpacity: config.text.outlineColor !== undefined ? (config.text.outlineColor >>> 24) : undefined,
+                show: config.text.show,
+                color: config.text.color,
+                opacity: config.text.opacity,
+                outlineColor: config.text.outlineColor,
+                outlineOpacity: config.text.outlineOpacity,
                 font: config.text.font,
                 weight: config.text.weight,
                 bump: config.text.bump,
-                emissiveColor: config.text.emissiveColor !== undefined ? foundry.utils.Color.from(config.text.emissiveColor).toString() : undefined,
+                emissiveColor: config.text.emissiveColor,
                 emissiveIntensity: config.text.emissiveIntensity,
-                //symbols
+                symbols: Object.entries(config.text.symbols ?? {}).map((symbol) => {
+                    return { 
+                        key: symbol[0],
+                        url: symbol[1]?.url,
+                        scale: symbol[1]?.scale,
+                        applyColor: symbol[1]?.applyColor
+                    };
+                })
             }: undefined)
         };
 
         return context;
     }
 
-    contextToConfig(context: Record<string, any>): DiceMaterialConfig {
+    contextToConfig(context: Record<string, any>): DeepPartial<DiceMaterialConfig> {
         const config: DiceMaterialConfig = {
-            color: context.usePlayerColor ? "user" : toColor(context.color),
+            color: context.usePlayerColor ? "user" : context.color,
             colorMap: toStringNull(context.colorMap),
             roughness: context.roughness as number,
             roughnessMap: toStringNull(context.roughnessMap),
             metalness: context.metalness as number,
             metalnessMap: toStringNull(context.metalnessMap),
-            emissiveColor: toColor(context.emissiveColor),
+            emissiveColor: context.emissiveColor,
             emissiveIntensity: context.emissiveIntensity as number,
             emissiveMap: toStringNull(context.emissiveMap),
             normalMap: toStringNull(context.normalMap),
@@ -566,31 +718,49 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
 
         if (context["text.font"]) {
             config.text = {
+                show: context["text.show"],
                 font: context["text.font"],
                 weight: context["text.weight"],
-                color: (toColor(context["text.color"]) + (context["text.opacity"] << 24)) >>> 0,
-                outlineColor: (toColor(context["text.outlineColor"]) + (context["text.outlineOpacity"] << 24)) >>> 0,
-                emissiveColor: toColor(context["text.emissiveColor"]),
+                color: context["text.color"],
+                opacity: context["text.opacity"],
+                outlineColor: context["text.outlineColor"],
+                outlineOpacity: context["text.outlineOpacity"],
+                emissiveColor: context["text.emissiveColor"],
                 emissiveIntensity: context["text.emissiveIntensity"],
-                bump: context["text.bump"]
+                bump: context["text.bump"],
+                symbols: Object.fromEntries(Object.entries(context).filter(e => e[0].match(symbolKeyRegex)).map((entry) => [entry[1], {
+                    url: context[`text.symbols.${entry[1]}.url`],
+                    scale: context[`text.symbols.${entry[1]}.scale`],
+                    applyColor: context[`text.symbols.${entry[1]}.applyColor`]
+                }]))
             };
         }
 
         return config;
     }
 
-    purgeEmptyConfig() {
-        Object.entries(this.configGroup).forEach((rv => { if (Object.keys(rv[1]).length === 0) delete this.configGroup[rv[0]]; }))
+    purgeEmptyConfig(obj: Record<string, any>) {
+        Object.entries(obj).forEach((rv => {
+            if (!(rv[1]) || typeof rv[1] !== "object")
+                return
+
+            this.purgeEmptyConfig(rv[1]);
+
+            if (Object.keys(rv[1]).length === 0) 
+                delete obj[rv[0]]; 
+
+        }));
     }
 
     static async onSubmit(event: Event, form: HTMLFormElement, formData: foundry.applications.ux.FormDataExtended) {
         if (this instanceof DiceMaterialsConfigWindow) {
-            console.log(this.configGroup);
-            this.purgeEmptyConfig();
+            this.purgeEmptyConfig(this.configGroup);
             await game.settings.set(MODULE.id, SETTING.DICE_MATERIALS, this.configGroup);
         }
     }
 }
+
+const symbolKeyRegex = /^text\.symbols\.(\S+)\.key$/;
 
 class RotateControls extends THREE.Controls<MouseEvent> {
 
@@ -711,4 +881,4 @@ class RotateControls extends THREE.Controls<MouseEvent> {
     }
 }
 
-export { DiceMaterialsConfigWindow }
+export { DiceMaterialsConfigWindow, loadPresets }

@@ -73,7 +73,7 @@ class DiceObject {
         this.rotationOffset = new THREE.Quaternion().identity();
         this.disappearingDuration = 1;
         this.isDisappearing = false;
-        this.graphics.userData = { disappear: 1 };
+        this.graphics.userData = { disappear: 0 };
     }
 
     /**
@@ -159,7 +159,7 @@ class DiceObject {
                 const actualDisappearTime = Math.min(this.disappearingDuration, this.maxLifetime);
 
                 if (this.lifetime < actualDisappearTime) {
-                    this.disappear(this.lifetime / actualDisappearTime);
+                    this.disappear(1 - this.lifetime / actualDisappearTime);
                 }
             }
         }
@@ -221,16 +221,6 @@ class DiceObject {
     disappear(progress: number) {
         if (!this.isDisappearing) {
             this.isDisappearing = true;
-
-            this.graphics.traverse(o => {
-                if (o instanceof THREE.Mesh && o.isMesh)
-                {
-                    if (o.material instanceof THREE.Material)
-                        o.material = this.createDisappearMaterial(o.material);
-                    else
-                        o.material = (o.material as THREE.Material[]).map(m => this.createDisappearMaterial(m));
-                }
-            });
         }
 
         this.graphics.userData = { disappear: progress };
@@ -245,7 +235,8 @@ class DiceObject {
         if (source.transparent)
             return source;
         const mat = source.clone();
-        mat.transparent = true;
+        THREE.MeshStandardMaterial.prototype.copy.call(mat, source);
+        //mat.transparent = true;
         mat.needsUpdate = true;
         this.tempMaterials.push(mat);
         return mat;

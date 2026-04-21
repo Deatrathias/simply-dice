@@ -1,7 +1,9 @@
 import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
 import { DiceMaterialsConfigWindow } from "dice-config";
-import { DiceMaterialConfigGroup } from "dice-materials";
+import { diceMaterialConfigSchema } from "dice-materials";
 import * as WORKER from "physics-worker-handler";
+
+const { NumberField, AlphaField } = foundry.data.fields;
 
 export const SETTING = { 
     // World
@@ -22,27 +24,27 @@ export const SETTING = {
     IMMERSIVE_ENVIRONMENT: "immersiveEnvironment",
     ANTIALIASING: "antialiasing",
     DISPLAY_ON_TOP: "displayOnTop",
-    SOUNDS: "sounds"
+    SOUND_VOLUME: "soundVolume"
 };
 
 export function registerSettings() {
-    registerSetting({ id: SETTING.TIMESCALE, type: new foundry.data.fields.NumberField({ nullable: false, min: 1, max: 5, step: 0.1 }), default: 2, scope: "world",
+    registerSetting({ id: SETTING.TIMESCALE, type: new NumberField({ nullable: false, min: 1, max: 5, step: 0.1 }), default: 2, scope: "world",
         onChange: value => { 
             if (game.simplyDice.diceArea)
                 game.simplyDice.diceArea.timescale = value as number; 
         } 
     });
-    registerSetting({ id: SETTING.TIME_UNTIL_DISAPPEARANCE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0.1 }), default: 4, scope: "world" });
+    registerSetting({ id: SETTING.TIME_UNTIL_DISAPPEARANCE, type: new NumberField({ nullable: false, min: 0.1 }), default: 4, scope: "world" });
     registerSetting({ id: SETTING.WAIT_FOR_ROLL, type: Boolean, default: false, scope: "world" });
-    registerSetting({ id: SETTING.MAX_WAIT_TIME, type: new foundry.data.fields.NumberField({ nullable: false, min: 0 }), default: 4, scope: "world" });
-    registerSetting({ id: SETTING.THROW_IMPULSE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0, max: 100 }), default: 5, scope: "world", 
+    registerSetting({ id: SETTING.MAX_WAIT_TIME, type: new NumberField({ nullable: false, min: 0 }), default: 4, scope: "world" });
+    registerSetting({ id: SETTING.THROW_IMPULSE, type: new NumberField({ nullable: false, min: 0, max: 100 }), default: 5, scope: "world", 
         onChange: value => WORKER.updateSettings({ throwImpulse: value as number })});
     registerSetting({ id: SETTING.DISABLE_FOR_USER, type: Boolean, default: false, scope: "user" });
-    registerSetting({ id: SETTING.MAX_FRAMERATE, type: new foundry.data.fields.NumberField({ nullable: true, min: 0 }), default: 60, scope: "client",
+    registerSetting({ id: SETTING.MAX_FRAMERATE, type: new NumberField({ nullable: true, min: 0 }), default: 60, scope: "client",
         onChange: value => game.simplyDice.diceArea?.changeFramerateCap(value as number | null) });
-    registerSetting({ id: SETTING.DICE_SIZE, type: new foundry.data.fields.NumberField({ nullable: false, min: 0, max: 100, step: 1 }), default: 50, scope: "client", 
+    registerSetting({ id: SETTING.DICE_SIZE, type: new NumberField({ nullable: false, min: 0, max: 100, step: 1 }), default: 50, scope: "client", 
         onChange: value => game.simplyDice.diceArea?.changeSizeSetting(value as number)});
-    registerSetting({ id: SETTING.MAX_DICE_ON_SCREEN, type: new foundry.data.fields.NumberField({ nullable: true, min: 1 }), default: 30, scope: "client", 
+    registerSetting({ id: SETTING.MAX_DICE_ON_SCREEN, type: new NumberField({ nullable: true, min: 1 }), default: 30, scope: "client", 
         onChange: value => game.simplyDice.diceArea?.changeMaxDice(value as number)});
     registerSetting({ id: SETTING.SHADOWS, type: Boolean, default: true, scope: "client",
         onChange: value => game.simplyDice.diceArea?.changeShadows(value as boolean)});
@@ -53,9 +55,9 @@ export function registerSettings() {
     registerSetting({ id: SETTING.ANTIALIASING, type: Boolean, default: true, scope: "client", requiresReload: true });
     registerSetting({ id: SETTING.DISPLAY_ON_TOP, type: Boolean, default: false, scope: "client", 
         onChange: value => game.simplyDice.diceArea?.updateContainerStyle() });
-    registerSetting({ id: SETTING.SOUNDS, type: Boolean, default: true, scope: "client" });
+    registerSetting({ id: SETTING.SOUND_VOLUME, type: new NumberField({ nullable: false, min: 0, max: 100, step: 1 }), default: 50, scope: "client" });
 
-    game.settings.register(MODULE.id, SETTING.DICE_MATERIALS, { name: "SIMPLY-DICE.Settings.DiceMaterials", type: new UserDiceConfigField(), default: {}, scope: "user", config: false});
+    game.settings.register(MODULE.id, SETTING.DICE_MATERIALS, { name: "SIMPLY-DICE.Settings.DiceMaterials", type: new foundry.data.fields.TypedObjectField(diceMaterialConfigSchema), default: {}, scope: "user", config: false});
 
     game.settings.registerMenu(MODULE.id, SETTING.DICE_MATERIALS, { 
         name: "SIMPLY-DICE.Settings.DiceMaterials", 
@@ -79,21 +81,4 @@ function registerSetting(setting: { id: string, type: any, default: any, choices
         onChange: setting.onChange,
         requiresReload: setting.requiresReload
     });
-}
-
-class UserDiceConfigField extends foundry.data.fields.ObjectField<Record<string, DiceMaterialConfigGroup>> {
-    override validate(value: unknown, options?: foundry.data.DataFieldValidationOptions): foundry.data.validation.DataModelValidationFailure | void {
-        if (!value)
-            return new foundry.data.validation.DataModelValidationFailure();
-
-        if (typeof value !== "object")
-            return new foundry.data.validation.DataModelValidationFailure(value);
-
-        for (const entry of Object.entries(value)) {
-            if (typeof entry[0] !== "string")
-                return new foundry.data.validation.DataModelValidationFailure(entry[0]);
-            if (typeof entry[1] !== "object")
-                return new foundry.data.validation.DataModelValidationFailure(entry[1]);
-        }
-    }
 }
