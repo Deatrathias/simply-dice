@@ -11,7 +11,7 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { DiceArea, TryRollParameters } from "dice-area";
 import { ContextMenuEntry } from "@7h3laughingman/foundry-types/client/applications/ux/context-menu.mjs";
 
-const { SchemaField, BooleanField, ColorField, FilePathField, NumberField, StringField, ArrayField, AlphaField } = foundry.data.fields;
+const { SchemaField, BooleanField, ColorField, FilePathField, NumberField, StringField, ArrayField, AlphaField, TypedObjectField } = foundry.data.fields;
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
 function toStringNull(s: string): string | null {
@@ -110,6 +110,8 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         usePlayerColor: new BooleanField({ initial: true }),
         color: new ColorField({ initial: "#ffffff", nullable: false, required: true }),
         colorMap: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
+        transparent: new BooleanField(),
+        opacity: new AlphaField({ step: 0.01 }),
         roughness: new AlphaField({ step: 0.01 }),
         roughnessMap: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
         metalness: new AlphaField({ step: 0.01 }),
@@ -420,6 +422,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
                         return;
                     }
                     mesh.position.set(x * 1.8, 1, y * 1.8);
+                    mesh.userData = { disappear: 0 };
                     this.scene.add(mesh);
                     this.previewObjects.push(mesh);
                     count++;
@@ -440,6 +443,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
             }
             mesh.position.set(0, 1, 0);
             this.previewObjects = [mesh];
+            mesh.userData = { disappear: 0 };
             this.scene.add(mesh);
         }
         this.controls?.setTargets(this.previewObjects);
@@ -642,6 +646,14 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
                 color.value = game.user.color.toString();
         }
 
+        const transparent = this.form["transparent"];
+        const opacity = this.form["opacity"];
+        if (transparent && opacity) {
+            opacity.disabled = !transparent.checked;
+            if (opacity.disabled)
+                opacity.value = 1;
+        }
+
         if (this.currentPath !== "global") {
             const contextDiff = this.configToContext((this.configGroup[this.currentPath] ?? {}));
 
@@ -667,6 +679,8 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
             usePlayerColor: config.color !== undefined ? config.color === "user" : undefined,
             color: config.color === "user" ? game.user.color : config.color,
             colorMap: config.colorMap,
+            transparent: config.transparent,
+            opacity: config.opacity,
             roughness: config.roughness,
             roughnessMap: config.roughnessMap,
             metalness: config.metalness,
@@ -705,6 +719,8 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         const config: DiceMaterialConfig = {
             color: context.usePlayerColor ? "user" : context.color,
             colorMap: toStringNull(context.colorMap),
+            transparent: context.transparent,
+            opacity: context.transparent ? context.opacity as number : 1,
             roughness: context.roughness as number,
             roughnessMap: toStringNull(context.roughnessMap),
             metalness: context.metalness as number,
@@ -748,13 +764,22 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
 
             if (Object.keys(rv[1]).length === 0) 
                 delete obj[rv[0]]; 
-
         }));
+    }
+
+    cleanConfigGroup() {
+        const settingType = game.settings.settings.get(MODULE.id + "." + SETTING.DICE_MATERIALS)?.type;
+        if (settingType && settingType instanceof TypedObjectField) {
+            settingType.clean(this.configGroup);
+            UTILS.cleanup(this.configGroup);
+        }
+    
+        this.purgeEmptyConfig(this.configGroup);
     }
 
     static async onSubmit(event: Event, form: HTMLFormElement, formData: foundry.applications.ux.FormDataExtended) {
         if (this instanceof DiceMaterialsConfigWindow) {
-            this.purgeEmptyConfig(this.configGroup);
+            this.cleanConfigGroup();
             await game.settings.set(MODULE.id, SETTING.DICE_MATERIALS, this.configGroup);
         }
     }

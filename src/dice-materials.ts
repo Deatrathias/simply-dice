@@ -10,6 +10,8 @@ const { SchemaField, ColorField, FilePathField, NumberField, StringField, TypedO
 type DiceMaterialConfig = {
     color: string | Color | "user",
     colorMap: string | null,
+    transparent: boolean,
+    opacity: number,
     roughness: number,
     roughnessMap: string | null,
     metalness: number,
@@ -45,6 +47,8 @@ type DiceMaterialSymbolConfig = {
 const defaultMaterialConfig = {
     color: "user",
     colorMap: null,
+    transparent: false,
+    opacity: 1,
     roughness: 0.5,
     roughnessMap: null,
     metalness: 0,
@@ -103,6 +107,8 @@ const diceMaterialConfigSchema = new SchemaField({
     color: new ColorOrUserField({ required: false, initial: undefined }),
     colorMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
     roughness: new AlphaField({ required: false, initial: undefined }),
+    transparent: new BooleanField({ required: false, initial: undefined }),
+    opacity: new AlphaField({ required: false, initial: undefined }),
     roughnessMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
     metalness: new AlphaField({ required: false, initial: undefined }),
     metalnessMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
@@ -126,7 +132,7 @@ const diceMaterialConfigSchema = new SchemaField({
             url: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
             scale: new NumberField({ required: false, initial: undefined }),
             applyColor: new BooleanField({ required: false, initial: undefined })
-        }), { initial: {} })
+        }), { initial: {}, required: false })
     }, { nullable: true, required: false, initial: undefined })
 });
 
@@ -339,6 +345,8 @@ class DiceMaterial {
 
     textMaskMap?: ImageBitmap;
 
+    transparentNode?: THREE.UniformNode<"bool", boolean>;
+
     showTextNode?: THREE.UniformNode<"bool", boolean>;
 
     textEmissiveNode?: THREE.UniformNode<"color", THREE.Color>;
@@ -346,6 +354,8 @@ class DiceMaterial {
     textEmissiveIntensityNode?: THREE.UniformNode<"float", number>;
 
     textBumpNode?: THREE.UniformNode<"float", number>;
+
+    opacity?: THREE.UniformNode<"float", number>;
 
     constructor(config: DiceMaterialConfig, diceModel: DiceModel, submat: DiceMaterialSubmat) {
         this.config = config;
@@ -369,9 +379,12 @@ class DiceMaterial {
 
         const black = new THREE.Color(0, 0, 0);
 
-        const noise = game.simplyDice.textureManager!.loadTexture(MODULE.relativePath("textures/noise.png"), true)!;
-        this.material.opacityNode = TSL.texture(noise).r;
-        this.material.alphaTestNode = TSL.userData("disappear", "float").toFloat();
+        this.transparentNode = TSL.uniform(false);
+        this.opacity = TSL.uniform(1);
+
+        const noise = game.simplyDice.textureManager!.loadTexture(MODULE.relativePath("textures/noise.webp"), true)!;
+        this.material.opacityNode = TSL.select(this.transparentNode, TSL.mul(TSL.sub(TSL.float(1), TSL.userData("disappear", "float") as unknown as THREE.Node<"float">), TSL.materialOpacity as unknown as THREE.Node<"float">), TSL.texture(noise).r);
+        this.material.alphaTestNode = TSL.select(this.transparentNode, TSL.float(0), TSL.userData("disappear", "float").toFloat());
 
         if (this.submat === "faces" || this.submat === "facesSecret") {
             this.showTextNode = TSL.uniform(true);
@@ -395,7 +408,9 @@ class DiceMaterial {
             // We use a cast because Typescript declaration is lacking
             this.material.normalNode = TSL.mix(TSL.materialNormal as THREE.Node<"vec3">, TSL.select(this.showTextNode, bumpNode, TSL.materialNormal) as THREE.Node<"vec3">, maskAlpha);
         }
-        this.material.castShadowNode = TSL.vec4(0, 0, 0, TSL.select(TSL.lessThan(this.material.alphaTestNode as THREE.Node<"float">, this.material.opacityNode as THREE.Node<"float">), TSL.float(1), TSL.float(0)));
+        this.material.castShadowNode = TSL.vec4(0, 0, 0, TSL.select(this.transparentNode,
+            this.opacity.mul(this.material.opacityNode as THREE.Node<"float">),
+            TSL.select(TSL.lessThan(this.material.alphaTestNode as THREE.Node<"float">, this.material.opacityNode as THREE.Node<"float">), TSL.float(1), TSL.float(0))));
     }
 
     buildMaterial(skipText?: boolean) {
@@ -403,9 +418,13 @@ class DiceMaterial {
             throw new Error("Texture manager not created?");
         const texMan = game.simplyDice.textureManager;
 
+        this.material.transparent = this.config.transparent;
+        this.transparentNode!.value = this.config.transparent;
+        this.opacity!.value = this.config.opacity;
         this.material.setValues({
             color: typeof this.config.color !== "string" ? this.config.color.css : this.config.color,
             map: texMan.loadTexture(this.config.colorMap),
+            opacity: this.config.opacity,
             metalness: this.config.metalness,
             metalnessMap: texMan.loadTexture(this.config.metalnessMap, true),
             roughness: this.config.roughness,

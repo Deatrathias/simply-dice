@@ -70,7 +70,8 @@ function defineColliderShape(denomination: string, shape: string, ...args: numbe
  */
 function initPhysicsWorld() {
     send({ type: "init", data: {
-        throwImpulse: getSetting(SETTING.THROW_IMPULSE)
+        throwImpulse: getSetting(SETTING.THROW_IMPULSE),
+        timeUntilDisappearance: getSetting(SETTING.TIME_UNTIL_DISAPPEARANCE)
     } });
 }
 

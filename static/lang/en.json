@@ -85,6 +85,13 @@
                     "label": "Color Map",
                     "hint": "Texture to apply to the dice."
                 },
+                "transparent": {
+                    "label": "Transparent",
+                    "hint": "Is the material transparent? Opacity and color map alpha will be used."
+                },
+                "opacity": {
+                    "label": "Opacity"
+                },
                 "roughness": {
                     "label": "Roughness",
                     "hint": "How rough the surface is. Values too low may cause excess brightness."

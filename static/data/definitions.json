@@ -4,7 +4,7 @@
         "modelUrl": "modules/simply-dice/models/d2.glb",
         "colliderShape": {
             "shape": "cylinder",
-            "arguments": [0.15, 0.75]
+            "arguments": [0.08, 0.75]
         },
         "rotationForValue": {
             "0": [1, 0, 0, 0],
@@ -28,7 +28,7 @@
         "modelUrl": "modules/simply-dice/models/d2.glb",
         "colliderShape": {
             "shape": "cylinder",
-            "arguments": [0.15, 0.75]
+            "arguments": [0.08, 0.75]
         },
         "rotationForValue": {
             "1": [1, 0, 0, 0],

@@ -40,7 +40,8 @@ export type UpdateSettingsMessage = {
 }
 
 export type PhysicsSettings = {
-    throwImpulse?: number
+    throwImpulse?: number,
+    timeUntilDisappearance?: number
 }
 
 export type SimulationStartMessage = {

@@ -6,7 +6,6 @@ import * as WORKER from "physics-worker-handler.ts";
 import { SimulationCompleteData, SimulationRoll, SimulationStartData } from "worker-types.js";
 import { HALF_PI } from "utils";
 import { DoRollMessage, socketName } from "socket";
-import { SortedSet } from "@rimbu/sorted";
 import { playDiceSound } from "audio";
 import { SETTING } from "settings";
 import * as TSL from "three/tsl";
@@ -99,8 +98,6 @@ class DiceArea {
 
     rollPromiseResolve: Map<number, (value: void) => void>;
 
-    collisionsSet: SortedSet<number>;
-
     collisionMap: Map<number, number>;
 
     areaSize = new THREE.Vector2();
@@ -176,7 +173,6 @@ class DiceArea {
         
         this.fovRatio = this.camera.position.y * (Math.tan(Math.toRadians(this.camera.fov / 2)));
         this.rollPromiseResolve = new Map();
-        this.collisionsSet = SortedSet.empty();
         this.collisionMap = new Map();
         this.maxDice = getSetting(SETTING.MAX_DICE_ON_SCREEN);
         this.changeShadows(getSetting(SETTING.SHADOWS));
@@ -195,7 +191,7 @@ class DiceArea {
         this.dirLight.target.position.set(0, 0, 0);
         this.changeShadowMap(parseInt(getSetting<string>(SETTING.SHADOW_MAP_RESOLUTION)));
         this.scene.add(this.dirLight);
-        this.floor = new THREE.Mesh(new THREE.PlaneGeometry(), new THREE.ShadowMaterial({ opacity: 0.5 })).rotateX(-HALF_PI);
+        this.floor = new THREE.Mesh(new THREE.PlaneGeometry(), new THREE.ShadowNodeMaterial({ opacity: 0.5 })).rotateX(-HALF_PI);
         this.scene.add(this.floor);
         this.camera.position.y = 40;
         this.camera.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), -HALF_PI);
@@ -420,7 +416,7 @@ class DiceArea {
 
         const elapsed = this.timer.getElapsed();
         const uncaledDelta = this.deltaTimeAccumulator / this.timer.getTimescale();
-        this.allDice.forEach(d => d.updateSimulationGraphics(elapsed, uncaledDelta));
+        this.allDice.forEach(d => d.updateSimulationGraphics(elapsed, this.timer.getDelta()));
         this.allDice.filter(d => !d.isAlive).forEach(d => { 
             WORKER.removeDice(d.id);
             this.scene.remove(d.graphics);
@@ -441,11 +437,6 @@ class DiceArea {
                 playDiceSound(Math.clamp(volume / 500, 0, 1));
 
             soundEvents.forEach(k => this.collisionMap.delete(k[0]));
-        }
-
-        if ((this.collisionsSet.min() ?? Infinity) < elapsed) {
-            //playDiceSound();
-            this.collisionsSet = this.collisionsSet.slice({ start: elapsed });
         }
 
         this.deltaTimeAccumulator = 0;
@@ -674,8 +665,6 @@ class DiceArea {
                     this.collisionMap.set(collision.time, collision.volume);
             }
         }
-            
-            //this.collisionsSet = SortedSet.from(this.collisionsSet, [...data.collisions].map(c => this.timer.getElapsed() + c * data.timestep));
     }
 
     clear() {

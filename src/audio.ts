@@ -7,7 +7,7 @@ let currentSound: foundry.audio.Sound | null = null;
 
 async function playSound(url: string, volume: number) {
     if (currentSound && currentSound.playing) {
-        if (currentSound.volume && currentSound.volume > volume)
+        if (currentSound.volume && currentSound.volume > 0)
             return;
 
         currentSound.stop();

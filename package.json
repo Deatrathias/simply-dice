@@ -34,7 +34,6 @@
     "@7h3laughingman/foundry-helpers": "^13.351.8",
     "@7h3laughingman/foundry-types": "^13.351.20",
     "@dimforge/rapier3d-compat": "^0.19.3",
-    "@rimbu/sorted": "^2.1.10",
     "quaternion": "^2.2.0",
     "three": "^0.183.2"
   }

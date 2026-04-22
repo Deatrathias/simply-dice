@@ -110,11 +110,13 @@ class PhysicsArea {
 
     throwImpulse: number;
 
+    timeUntilDisappearance: number;
+
     constructor(settings: PhysicsSettings) {
         this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
         this.world.timestep = 1 / 60;
 
-        this.floor = this.world.createCollider(RAPIER.ColliderDesc.cuboid(30, 1, 30).setTranslation(0, -1, 0));
+        this.floor = this.world.createCollider(RAPIER.ColliderDesc.cuboid(50, 1, 50).setTranslation(0, -1, 0));
 
         this.walls = {
             right: this.world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 10, 30)),
@@ -129,7 +131,8 @@ class PhysicsArea {
             w.setCollisionGroups(1 | (0b10 << 16));
         });
 
-        this.throwImpulse = 20;
+        this.throwImpulse = 5;
+        this.timeUntilDisappearance = 4;
         this.updateSettings(settings);
     }
 
@@ -138,7 +141,6 @@ class PhysicsArea {
         this.currentHeight = height;
         const halfWidth = width / 2;
         const halfHeight = height / 2;
-        this.floor.setHalfExtents({ x: halfWidth, y: 1, z: halfHeight });
         this.walls.right.setHalfExtents({ x: 0.5, y: 10, z: halfHeight + 1 });
         this.walls.right.setTranslation({ x: halfWidth + 0.5, y: 10, z: 0 });
         this.walls.left.setHalfExtents({ x: 0.5, y: 10, z: halfHeight + 1 });
@@ -153,6 +155,9 @@ class PhysicsArea {
     updateSettings(settings: PhysicsSettings) {
         if (settings.throwImpulse !== undefined)
             this.throwImpulse = settings.throwImpulse;
+
+        if (settings.timeUntilDisappearance !== undefined)
+            this.timeUntilDisappearance = settings.timeUntilDisappearance;
     }
 
     getAreaIntersection(angle: number): { x: number, y: number } {
@@ -187,22 +192,30 @@ class PhysicsArea {
             const pointOnArea = this.getAreaIntersection(angle);
             const centerStartPoint = { x: pointOnArea.x, y: 5, z: pointOnArea.y };
             const toRotation = Quaternion.fromAxisAngle([0, 1, 0], -angle);
+            let layer = 0;
+            let countInLayer = 0;
 
-            let count = 0;
             for (const diceTerm of roll.diceTerms) {
                 const obj = diceObj.get(diceTerm.denomination);
                 if (!obj)
                     continue;
 
+                const ratio = (countInLayer - layer) / (layer === 0 ? 1 : layer);
+
                 const impulse = toRotation.rotateVector({ x: -this.throwImpulse - random(rng) * (this.throwImpulse / 5), y: 0, z: 0 }) as RAPIER.Vector;
-                const offsetRotation = toRotation.mul(Quaternion.fromAxisAngle([0, 1, 0], ((count % 3) - 1) * Math.PI / 6));
-                const offsetVector = offsetRotation.rotateVector({ x: (-Math.floor((count + 2) / 3)), y: 0, z: 0 }) as RAPIER.Vector;
+                const offsetRotation = toRotation.mul(Quaternion.fromAxisAngle([0, 1, 0], ratio * Math.PI / 4));
+                const offsetVector = offsetRotation.rotateVector({ x: layer * -1.5, y: 0, z: 0 }) as RAPIER.Vector;
 
                 const startRotation = new Quaternion(random(rng) * 2 - 1, random(rng) * 2 - 1, random(rng) * 2 - 1, random(rng) * 2 - 1).normalize();
                 const dice = new SimulatedDice(this, diceTerm.id, simulationData.startTime, baseStepCount, maxStepCount, obj, addVectors(centerStartPoint, offsetVector), startRotation);
                 dice.rigidbody.applyImpulseAtPoint(scaleVector(impulse, dice.rigidbody.mass()), addVectors(dice.rigidbody.translation(), {x:0, y:0.1, z:0}), true);
                 simulating.push(dice);
-                count++;
+
+                countInLayer++;
+                if (countInLayer >= layer * 2 + 1) {
+                    layer++;
+                    countInLayer = 0;
+                }
             }
         }
 
@@ -213,33 +226,16 @@ class PhysicsArea {
 
         const replayingDices = simulatedDices.filter(d => d.replaySimulation(simulationData.startTime));
 
-        const collisions = new Uint16Array(new ArrayBuffer(100 * Uint16Array.BYTES_PER_ELEMENT, { maxByteLength: 200 * Uint16Array.BYTES_PER_ELEMENT }));
         const collisionTime = new Map<number, number>();
         let collisionCount = 0;
         const eventQueue = new RAPIER.EventQueue(true);
         for (let i = 0; i < maxStepCount; i++) {
             this.world.step(eventQueue);
-            eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-                if (started) {
-                    if (collisionCount > collisions.length) {
-                        if (collisions.buffer.byteLength < collisions.buffer.maxByteLength)
-                            collisions.buffer.resize(Math.min((collisionCount + 30) * Uint16Array.BYTES_PER_ELEMENT, collisions.buffer.maxByteLength));
-                        else
-                            return;
-                    }
-                    collisions[collisionCount] = i;
-                    collisionCount++;
-                }
-            });
             eventQueue.drainContactForceEvents((event) => {
-                
-                console.log(`${i}: ${event.totalForceMagnitude()}`);
                 if (event.maxForceMagnitude() > 15) {
                     const existing = collisionTime.get(i);
-                    if (!existing || existing < event.maxForceMagnitude())
+                    if (!existing || existing < event.maxForceMagnitude()) {
                         collisionTime.set(i, event.maxForceMagnitude());
-                    if (collisionCount === 0 || collisions[collisionCount - 1] !== i) {
-                        collisions[collisionCount] = i;
                         collisionCount++;
                     }
                 }
@@ -255,15 +251,6 @@ class PhysicsArea {
         }
         eventQueue.free();
 
-        
-        console.log(collisionTime);
-        try {
-        if (collisionCount > 0)
-            collisions.buffer.resize((collisionCount - 1) * Uint16Array.BYTES_PER_ELEMENT);
-        } catch (e: any) {
-            console.log(collisionCount);
-            throw e;
-        }
         simulating.forEach(d => d.endRecording(maxStepCount));
 
         const buffersToSend: ArrayBuffer[] = [];
@@ -375,13 +362,13 @@ class SimulatedDice {
             (this.posRot.buffer as ArrayBuffer).resize(Math.min(this.maxByteSize, SimulatedDice.toByteSize(this.currentStep + 60)));
 
             if (this.posRot.buffer.byteLength == this.posRot.buffer.maxByteLength) {
-                console.log("max reached");
+                console.warn("max reached");
             }
         }
 
         // Set up wall collision once we're inside
         if ((this.collider.collisionGroups() & (1 << 16)) == 0) {
-            if (Math.abs(position.x) <= this.area.currentWidth / 2 - 1 && Math.abs(position.y) <= this.area.currentHeight / 2 - 1) {
+            if (Math.abs(position.x) <= this.area.currentWidth / 2 && Math.abs(position.y) <= this.area.currentHeight / 2) {
                 this.collider.setCollisionGroups(this.collider.collisionGroups() | (1 << 16));
             }
         }
@@ -390,14 +377,14 @@ class SimulatedDice {
             if (sqrMagnitude(this.rigidbody.linvel()) < 0.0002 && sqrMagnitude(this.rigidbody.angvel()) < 0.0002)
             {
                 this.inactiveSteps++;
-                if (this.inactiveSteps >= 30) {
-                    this.rigidbody.setLinvel({ x: 0, y: 0, z: 0 }, false);
-                    this.rigidbody.setAngvel({ x: 0, y: 0, z: 0 }, false);
+                if (this.inactiveSteps >= 30)
                     this.rigidbody.sleep();
-                }
             }
-            else
+            else {
                 this.inactiveSteps = 0;
+                if (this.currentStep > 240)
+                    this.rigidbody.setAngularDamping(this.rigidbody.angularDamping() + 0.1);
+            }
         }
 
         this.posRot[stepIndex] = position.x;
@@ -428,12 +415,11 @@ class SimulatedDice {
      * @returns Whether or not the simulation should be replayed
      */
     replaySimulation(time: number): boolean {
-        this.currentStep = Math.floor((time - this.startTime) / this.area.world.timestep)
+        this.rigidbody.setEnabled(true);
 
-        if (this.currentStep >= this.maxStep)
-            return false;
+        this.currentStep = Math.floor((time - this.startTime) / this.area.world.timestep);
 
-        const stepIndex = this.currentStep * 7;
+        const stepIndex = Math.min(this.currentStep, this.maxStep - 1) * 7;
         this.rigidbody.setTranslation({
             x: this.posRot[stepIndex],
             y: this.posRot[stepIndex + 1],
@@ -454,23 +440,31 @@ class SimulatedDice {
      * Advance a step of the replay
      */
     replaySimulationStep() {
-        if (this.currentStep >= this.maxStep)
+        if (!this.rigidbody.isEnabled())
             return;
 
-        const stepIndex = this.currentStep * 7;
+        if (this.currentStep >= this.maxStep + this.area.timeUntilDisappearance / this.area.world.timestep) {
+            this.rigidbody.setEnabled(false);
+            this.rigidbody.setTranslation({ x: 0, y: -1000, z:0 }, false);
+            return;
+        }
 
-        this.rigidbody.setNextKinematicTranslation({
-            x: this.posRot[stepIndex],
-            y: this.posRot[stepIndex + 1],
-            z: this.posRot[stepIndex + 2]
-        });
+        if (this.currentStep < this.maxStep) {
+            const stepIndex = this.currentStep * 7;
 
-        this.rigidbody.setNextKinematicRotation({
-            x: this.posRot[stepIndex + 3],
-            y: this.posRot[stepIndex + 4],
-            z: this.posRot[stepIndex + 5],
-            w: this.posRot[stepIndex + 6]
-        });
+            this.rigidbody.setNextKinematicTranslation({
+                x: this.posRot[stepIndex],
+                y: this.posRot[stepIndex + 1],
+                z: this.posRot[stepIndex + 2]
+            });
+
+            this.rigidbody.setNextKinematicRotation({
+                x: this.posRot[stepIndex + 3],
+                y: this.posRot[stepIndex + 4],
+                z: this.posRot[stepIndex + 5],
+                w: this.posRot[stepIndex + 6]
+            });
+        }
 
         this.currentStep++;
     }
