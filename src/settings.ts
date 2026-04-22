@@ -3,7 +3,7 @@ import { DiceMaterialsConfigWindow } from "dice-config";
 import { diceMaterialConfigSchema } from "dice-materials";
 import * as WORKER from "physics-worker-handler";
 
-const { NumberField, AlphaField } = foundry.data.fields;
+const { NumberField, BooleanField } = foundry.data.fields;
 
 export const SETTING = { 
     // World
@@ -36,7 +36,7 @@ export function registerSettings() {
     });
     registerSetting({ id: SETTING.TIME_UNTIL_DISAPPEARANCE, type: new NumberField({ nullable: false, min: 0.1 }), default: 4, scope: "world",
         onChange: value => WORKER.updateSettings({ timeUntilDisappearance: value as number }) });
-    registerSetting({ id: SETTING.WAIT_FOR_ROLL, type: Boolean, default: false, scope: "world" });
+    registerSetting({ id: SETTING.WAIT_FOR_ROLL, type: new BooleanField(), default: false, scope: "world" });
     registerSetting({ id: SETTING.MAX_WAIT_TIME, type: new NumberField({ nullable: false, min: 0 }), default: 4, scope: "world" });
     registerSetting({ id: SETTING.THROW_IMPULSE, type: new NumberField({ nullable: false, min: 0, max: 100 }), default: 5, scope: "world", 
         onChange: value => WORKER.updateSettings({ throwImpulse: value as number })});

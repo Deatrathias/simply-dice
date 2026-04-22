@@ -11,7 +11,7 @@
   "manifest": "#{MANIFEST}#",
   "download": "#{DOWNLOAD}#",
   "relationships": {
-    "requires": [
+    "recommends": [
       {
         "id": "lib-wrapper",
         "type": "module",

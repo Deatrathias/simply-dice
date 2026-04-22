@@ -12,7 +12,12 @@ import { initSocket } from "socket";
 import { initTextureManager } from "texture-manager";
 
 export const debugging = false;
-const libWrapper = (globalThis as any).libWrapper;
+
+declare namespace globalThis {
+    class libWrapper {
+        static register(package_id: string, target: string, fn: (wrapped: (...args: any[]) => any, ...args: any[]) => any): void;
+    }
+}
 
 Hooks.on("init", () => {
     registerSettings();
@@ -21,11 +26,19 @@ Hooks.on("init", () => {
     loadDefinitions();
     loadPresets();
 
-    libWrapper.register(MODULE.id, "ChatMessage._preCreateOperation", preCreateMessage);
+    if (globalThis.libWrapper)
+        globalThis.libWrapper.register(MODULE.id, "ChatMessage._preCreateOperation", preCreateMessage);
+    else
+        Hooks.on("preCreateChatMessage", (message: ChatMessage) => onPreCreate(message));
 });
 
 async function preCreateMessage(wrapped: (document: ChatMessage[], operation: ChatMessageCreateOperation, user: BaseUser) => Promise<void>, document: ChatMessage[], operation: ChatMessageCreateOperation, user: BaseUser) {
+    await onPreCreate(...document);
     
+    return await wrapped(document, operation, user);
+}
+
+async function onPreCreate(...document: ChatMessage[]) {
     if (game.simplyDice.diceArea) {
         const rolls: Roll[] = [];
         rolls.push(...document.flatMap(m => m.rolls));
@@ -44,8 +57,6 @@ async function preCreateMessage(wrapped: (document: ChatMessage[], operation: Ch
             }
         }
     }
-    
-    return await wrapped(document, operation, user);
 }
 
 Hooks.on("setup", () => {

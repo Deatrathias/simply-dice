@@ -6,7 +6,7 @@
             "TimeUntilDisappearance": "Time Until Dice Disappear",
             "TimeUntilDisappearanceHint": "Number of seconds until a die disappears after the roll is done.",
             "WaitForRoll": "Wait for Roll",
-            "WaitForRollHint": "Wait for the dice animation to finish before releasing the roll.",
+            "WaitForRollHint": "Requires LibWrapper. Wait for the dice animation to finish before releasing the roll.",
             "MaxWaitTime": "Maximum Wait Time",
             "MaxWaitTimeHint": "If waiting for roll, the maximum duration to wait if the dice roll takes too long.",
             "ThrowImpulse": "Throw Impulse",

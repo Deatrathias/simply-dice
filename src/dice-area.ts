@@ -456,7 +456,7 @@ class DiceArea {
         if (this.can3dRoll(roll)) {
             played = true;
             const promise = this.rollAndWait(roll.dice, message);
-            if (getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
+            if (game.modules.has("libWrapper") && getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
                 await promise;
         }
 
