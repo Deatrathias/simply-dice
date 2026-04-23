@@ -10,6 +10,7 @@ import { playDiceSound } from "audio";
 import { SETTING } from "settings";
 import * as TSL from "three/tsl";
 import BloomNode, { bloom } from "three/addons/tsl/display/BloomNode.js";
+import OutlineNode, { outline } from "three/addons/tsl/display/OutlineNode.js";
 import { debugging } from "hooks";
 import { UserDiceMaterials } from "dice-materials";
 
@@ -63,6 +64,8 @@ class DiceArea {
     bloomStrength: THREE.UniformNode<"float", number>;
 
     bloomThreshold: THREE.UniformNode<"float", number>;
+
+    outlineProcess: OutlineNode;
 
     divContainer?: HTMLDivElement;
 
@@ -157,14 +160,16 @@ class DiceArea {
         this.lastUpdateTime = 0;
         this.deltaTimeAccumulator = 0;
         const scenePass = TSL.pass(this.scene, this.camera);
-        this.bloomStrength = TSL.uniform(1);
-        this.bloomThreshold = TSL.uniform(3);
+        this.bloomStrength = TSL.uniform(getSetting(SETTING.BLOOM_STRENGTH));
+        this.bloomThreshold = TSL.uniform(getSetting(SETTING.BLOOM_THRESHOLD));
         this.bloomProcess = bloom(scenePass, 0, 0, 1);
         this.bloomProcess.strength = this.bloomStrength;
         this.bloomProcess.threshold = this.bloomThreshold;
+        this.outlineProcess = outline(this.scene, this.camera, { edgeGlow: TSL.uniform(1), edgeThickness: TSL.uniform(5), selectedObjects: [] });
+        const outlineColor = TSL.vec4(this.outlineProcess.visibleEdge.mul(TSL.color("#ffffff")), this.outlineProcess.visibleEdge);
         this.toneMappingIntensity = TSL.uniform(1);
         this.renderPipeline = new THREE.RenderPipeline(this.renderer);
-        this.renderPipeline.outputNode = TSL.renderOutput(DiceArea.mergeBloom(scenePass, this.bloomProcess), THREE.ACESFilmicToneMapping, THREE.LinearSRGBColorSpace);
+        this.renderPipeline.outputNode = TSL.renderOutput(DiceArea.mergeBloom(outlineColor.add(scenePass), this.bloomProcess), THREE.ACESFilmicToneMapping, THREE.LinearSRGBColorSpace);
         this.renderPipeline.outputColorTransform = true;
         this.changeSizeSetting(getSetting(SETTING.DICE_SIZE), true);
         this.resizeArea();
@@ -369,6 +374,20 @@ class DiceArea {
         }
     }
 
+    changeHighlight(enabled: boolean) {
+        if (enabled)
+            this.outlineProcess.selectedObjects.push(...this.allDice.filter(d => d.userId === game.userId).map(d => d.graphics));
+        else
+            this.outlineProcess.selectedObjects.length = 0;
+    }
+
+    changeBloom(options: { strength?: number, threshold? : number }) {
+        if (options.strength !== undefined)
+            this.bloomStrength.value = options.strength;
+        if (options.threshold !== undefined)
+            this.bloomThreshold.value = options.threshold;
+    }
+
     updateImmersiveEnvironment() {
         if (!this.immersiveCanvasContext)
             return;
@@ -415,14 +434,11 @@ class DiceArea {
         }
 
         const elapsed = this.timer.getElapsed();
-        const uncaledDelta = this.deltaTimeAccumulator / this.timer.getTimescale();
         this.allDice.forEach(d => d.updateSimulationGraphics(elapsed, this.timer.getDelta()));
         this.allDice.filter(d => !d.isAlive).forEach(d => { 
-            WORKER.removeDice(d.id);
-            this.scene.remove(d.graphics);
+            this.removeDie(d);
             this.allDice.findSplice(ad => ad === d);
         });
-        //this.dirLight.intensity = canvas.colors.background.hsv[2];
 
         if (this.immersiveUpdateTexture)
             this.updateImmersiveEnvironment();
@@ -456,7 +472,7 @@ class DiceArea {
         if (this.can3dRoll(roll)) {
             played = true;
             const promise = this.rollAndWait(roll.dice, message);
-            if (game.modules.has("libWrapper") && getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
+            if (game.modules.has("lib-wrapper") && getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
                 await promise;
         }
 
@@ -558,6 +574,7 @@ class DiceArea {
         if (this.rollStack.length == 0)
             return;
 
+        const ownOutline = getSetting(SETTING.HIGHLIGHT_OWN_DICE);
         let count = 0;
         const rolls = [];
         while (this.rollStack.length > 0) {
@@ -599,13 +616,15 @@ class DiceArea {
                         continue;
 
                     count++;
-                    const dice = new DiceObject(this.nextDiceId, diceModel, materialSet, result, params.rollId, secret);
+                    const dice = new DiceObject(this.nextDiceId, params.userId, diceModel, materialSet, result, params.rollId, secret);
                     this.nextDiceId++;
                     simulationData.diceTerms.push({
                         id: dice.id,
                         denomination: diceModel.definition.denomination
                     });
 
+                    if (ownOutline && params.userId === game.userId)
+                        this.outlineProcess.selectedObjects.push(dice.graphics);
                     this.allDice.push(dice);
                     if (this.maxDice && count >= this.maxDice)
                         break;
@@ -667,12 +686,17 @@ class DiceArea {
         }
     }
 
+    removeDie(dice: DiceObject) {
+        dice.clearSimulation();
+        dice.die();
+        WORKER.removeDice(dice.id);
+        this.scene.remove(dice.graphics);
+        this.outlineProcess.selectedObjects.findSplice(d => d.id === dice.id);
+    }
+
     clear() {
         this.allDice.forEach(d => {
-            d.clearSimulation();
-            d.die();
-            WORKER.removeDice(d.id);
-            this.scene.remove(d.graphics);
+            this.removeDie(d);
         });
         this.allDice.length = 0;
     }

@@ -3,7 +3,7 @@ import { DiceModel, DiceTextDefinition, forEveryModel } from "dice-definition";
 import { SETTING } from "settings";
 import * as TSL from "three/tsl";
 import * as THREE from "three/webgpu";
-import { cleanup, colorToStyle } from "utils";
+import { cleanup } from "utils";
 
 const { SchemaField, ColorField, FilePathField, NumberField, StringField, TypedObjectField, BooleanField, AlphaField } = foundry.data.fields;
 
@@ -132,7 +132,7 @@ const diceMaterialConfigSchema = new SchemaField({
             url: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
             scale: new NumberField({ required: false, initial: undefined }),
             applyColor: new BooleanField({ required: false, initial: undefined })
-        }), { initial: {}, required: false })
+        }), { initial: {}, required: false } as Record<string, any>)
     }, { nullable: true, required: false, initial: undefined })
 });
 
@@ -178,7 +178,7 @@ class UserDiceMaterials {
     initMaterials(existingSetting?: DiceMaterialConfigGroup) {
         let setting = existingSetting;
         if (!setting)
-            setting = game.settings.storage.get("user").getSetting(`${MODULE.id}.${SETTING.DICE_MATERIALS}`, this.userId)?.value as DiceMaterialConfigGroup | undefined | null ?? undefined;
+            setting = (game.settings.storage.get("user") as unknown as foundry.documents.collections.WorldSettings).getSetting(`${MODULE.id}.${SETTING.DICE_MATERIALS}`, this.userId)?.value as DiceMaterialConfigGroup | undefined | null ?? undefined;
         this.settingGroup = setting;
         cleanup(this.settingGroup);
 
@@ -216,12 +216,14 @@ class UserDiceMaterials {
 
         cleanup(this.settingGroup);
 
+        const equalFunc = foundry.utils.isNewerVersion(game.version, "14") ? foundry.utils.equals : foundry.utils.objectsEqual;
+
         for (const material of this.materials) {
             const configFaces = this.getDiceMaterialConfig(material[0], "faces");
             const configEdges = this.getDiceMaterialConfig(material[0], "edges");
 
-            if (force || !foundry.utils.objectsEqual(material[1].faces.config, configFaces)) {
-                const skipText = !force && foundry.utils.objectsEqual(material[1].faces.config.text!, configFaces.text!);
+            if (force || !equalFunc(material[1].faces.config, configFaces)) {
+                const skipText = !force && equalFunc(material[1].faces.config.text!, configFaces.text!);
                 material[1].faces.config = configFaces;
                 material[1].faces.buildMaterial(skipText);
                 if (doSecret) {
@@ -230,7 +232,7 @@ class UserDiceMaterials {
                 }
             }
 
-            if (force || !foundry.utils.objectsEqual(material[1].edges.config, configEdges)) {
+            if (force || !equalFunc(material[1].edges.config, configEdges)) {
                 material[1].edges.config = configEdges;
                 material[1].edges.buildMaterial();
             }

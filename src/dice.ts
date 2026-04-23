@@ -24,6 +24,8 @@ class DiceObject {
 
     rollId?: number;
 
+    userId: string;
+
     diceModel: DiceModel;
 
     graphics: THREE.Object3D;
@@ -58,8 +60,9 @@ class DiceObject {
         return this.lifetime > 0;
     }
 
-    constructor(id: number, diceModel: DiceModel, materials: DiceMaterialSet, targetResult?: number, rollId?: number, isSecret?: boolean) {
+    constructor(id: number, userId: string, diceModel: DiceModel, materials: DiceMaterialSet, targetResult?: number, rollId?: number, isSecret?: boolean) {
         this.id = id;
+        this.userId = userId;
         this.rollId = rollId;
         this.running = false;
         this.started = false;

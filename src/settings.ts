@@ -24,7 +24,10 @@ export const SETTING = {
     IMMERSIVE_ENVIRONMENT: "immersiveEnvironment",
     ANTIALIASING: "antialiasing",
     DISPLAY_ON_TOP: "displayOnTop",
-    SOUND_VOLUME: "soundVolume"
+    SOUND_VOLUME: "soundVolume",
+    HIGHLIGHT_OWN_DICE: "highlightOwnDice",
+    BLOOM_STRENGTH: "bloomStrength",
+    BLOOM_THRESHOLD: "bloomThreshold"
 };
 
 export function registerSettings() {
@@ -54,9 +57,15 @@ export function registerSettings() {
     registerSetting({ id: SETTING.IMMERSIVE_ENVIRONMENT, type: Boolean, default: false, scope: "client",
         onChange: value => game.simplyDice.diceArea?.changeImmersiveEnvironment(value as boolean)});
     registerSetting({ id: SETTING.ANTIALIASING, type: Boolean, default: true, scope: "client", requiresReload: true });
-    registerSetting({ id: SETTING.DISPLAY_ON_TOP, type: Boolean, default: false, scope: "client", 
+    registerSetting({ id: SETTING.DISPLAY_ON_TOP, type: Boolean, default: true, scope: "client", 
         onChange: value => game.simplyDice.diceArea?.updateContainerStyle() });
     registerSetting({ id: SETTING.SOUND_VOLUME, type: new NumberField({ nullable: false, min: 0, max: 100, step: 1 }), default: 50, scope: "client" });
+    registerSetting({ id: SETTING.HIGHLIGHT_OWN_DICE, type: Boolean, default: false, scope: "client",
+        onChange: value => game.simplyDice.diceArea?.changeHighlight(value as boolean)});
+    registerSetting({ id: SETTING.BLOOM_STRENGTH, type: new NumberField({ min: 0, max: 1, step: 0.01 }), default: 1, scope: "client",
+        onChange: value => game.simplyDice.diceArea?.changeBloom({ strength: value as number }) });
+    registerSetting({ id: SETTING.BLOOM_THRESHOLD, type: new NumberField({ min: 0, step: 0.01 }), default: 3, scope: "client",
+        onChange: value => game.simplyDice.diceArea?.changeBloom({ threshold: value as number }) });
 
     game.settings.register(MODULE.id, SETTING.DICE_MATERIALS, { name: "SIMPLY-DICE.Settings.DiceMaterials", type: new foundry.data.fields.TypedObjectField(diceMaterialConfigSchema), default: {}, scope: "user", config: false});
 
@@ -65,6 +74,7 @@ export function registerSettings() {
         hint: "SIMPLY-DICE.Settings.DiceMaterialsHint", 
         label: "SIMPLY-DICE.Settings.DiceMaterialsLabel",
         icon: "fa-solid fa-dice",
+        restricted: false,
         type: DiceMaterialsConfigWindow });
 }
 

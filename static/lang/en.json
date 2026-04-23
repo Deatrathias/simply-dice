@@ -31,6 +31,12 @@
             "DisplayOnTopHint": "Render dice above UI elements.",
             "SoundVolume": "Dice Sound Volume",
             "SoundVolumeHint": "Volume of sounds when dice are rolling.",
+            "HighlightOwnDice": "Highlight Own Dice",
+            "HighlightOwnDiceHint": "Add an outline to your own dice.",
+            "BloomStrength": "Bloom Strength",
+            "BloomStrengthHint": "Adjust the strength of the bloom effect.",
+            "BloomThreshold": "Bloom Threshold",
+            "BloomThresholdHint": "Minimum light value to apply bloom.",
             "DiceMaterials": "User Dice Materials",
             "DiceMaterialsHint": "Appearance of your own dice.",
             "DiceMaterialsLabel": "Configure Dice Materials"

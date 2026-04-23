@@ -1,7 +1,6 @@
 import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
-import { DatabaseUpdateOperation } from "@7h3laughingman/foundry-types/common/abstract/_module.mjs";
-import { ChatMessageCreateOperation } from "@7h3laughingman/foundry-types/common/documents/chat-message.mjs";
-import BaseUser from "@7h3laughingman/foundry-types/common/documents/user.mjs";
+import { BaseUser } from "@7h3laughingman/foundry-types/client/documents/_module.mjs";
+import { ChatMessageCreateOperation } from "@7h3laughingman/foundry-types/client/documents/chat-message.mjs";
 import { initDiceArea } from "dice-area.ts";
 import { loadPresets } from "dice-config";
 import { loadDefinitions } from "dice-definition.ts";
@@ -29,7 +28,7 @@ Hooks.on("init", () => {
     if (globalThis.libWrapper)
         globalThis.libWrapper.register(MODULE.id, "ChatMessage._preCreateOperation", preCreateMessage);
     else
-        Hooks.on("preCreateChatMessage", (message: ChatMessage) => onPreCreate(message));
+        Hooks.on("preCreateChatMessage", (message) => onPreCreate(message as ChatMessage));
 });
 
 async function preCreateMessage(wrapped: (document: ChatMessage[], operation: ChatMessageCreateOperation, user: BaseUser) => Promise<void>, document: ChatMessage[], operation: ChatMessageCreateOperation, user: BaseUser) {
@@ -53,7 +52,7 @@ async function onPreCreate(...document: ChatMessage[]) {
         if (promises.length > 0) {
             const rolled = await Promise.all(promises);
             if (rolled.find(b => b)) {
-                document.forEach(m => m.updateSource({"-=sound": null}));
+                document.forEach(m => m.updateSource( foundry.utils.isNewerVersion(game.version, "14") ? { sound: new foundry.data.operators.ForcedDeletion() } : {"-=sound": null}));
             }
         }
     }
@@ -106,14 +105,15 @@ Hooks.on("ready", () => {
     }
 });
 
-Hooks.on("updateSetting", (setting: Setting, changed: object, options: Partial<DatabaseUpdateOperation<Setting>>, userId: string) => {
+
+Hooks.on("updateSetting", ((setting: Setting) => {
     if (setting.key !== `${MODULE.id}.${SETTING.DICE_MATERIALS}` || !setting.user)
         return;
 
     game.simplyDice.userMaterials?.get(setting.user)?.updateMaterials((setting.value ?? undefined) as DiceMaterialConfigGroup | undefined);
-});
+}) as ((setting: unknown) => void));
 
-Hooks.on("updateUser", (user: User, changed) => {
+Hooks.on("updateUser", ((user: User, changed: Record<string, any>) => {
     if (changed.color)
         game.simplyDice.userMaterials?.get(user.id)?.updateMaterials();
-});
+}) as (...args: unknown[]) => void);
