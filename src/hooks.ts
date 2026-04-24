@@ -45,7 +45,7 @@ async function onPreCreate(...document: ChatMessage[]) {
         const promises = [];
         for (const message of document) {
             if (message.rolls) {
-                promises.push(...message.rolls.map(r => game.simplyDice.diceArea!.triggerRoll(r, message)));
+                promises.push(...message.rolls.map(r => game.simplyDice.diceArea!.startRoll(r, message)));
             }
         }
 
@@ -105,7 +105,6 @@ Hooks.on("ready", () => {
     }
 });
 
-
 Hooks.on("updateSetting", ((setting: Setting) => {
     if (setting.key !== `${MODULE.id}.${SETTING.DICE_MATERIALS}` || !setting.user)
         return;
@@ -117,3 +116,5 @@ Hooks.on("updateUser", ((user: User, changed: Record<string, any>) => {
     if (changed.color)
         game.simplyDice.userMaterials?.get(user.id)?.updateMaterials();
 }) as (...args: unknown[]) => void);
+
+import "compat/index";

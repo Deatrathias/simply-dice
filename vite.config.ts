@@ -1,10 +1,9 @@
 import { defineConfig } from "vite";
-import moduleJson from "./static/module.json" with { type: "json" };
-import wasm from "vite-plugin-wasm";
+import path from "node:path";
 
 export default defineConfig({
     root: ".",
-    publicDir: "static",
+    publicDir: path.resolve(__dirname, "static"),
     base: "",
     server: {
         port: 30001,
@@ -25,7 +24,5 @@ export default defineConfig({
         rolldownOptions: {
         }
     },
-    plugins: [ 
-
-     ]
+    plugins: [ ]
 });

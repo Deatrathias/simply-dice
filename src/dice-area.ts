@@ -30,7 +30,7 @@ type RollParameters = {
     userId: string,
     rollId?: number,
     createdAt?: number,
-    visibility: { blind?: boolean, users?: string[] },
+    visibility: { blind?: boolean, users?: string[], forceSecret?: boolean },
     blind?: boolean,
     diceTerms: DiceTermParameter[]
 }
@@ -434,7 +434,7 @@ class DiceArea {
         }
 
         const elapsed = this.timer.getElapsed();
-        this.allDice.forEach(d => d.updateSimulationGraphics(elapsed, this.timer.getDelta()));
+        this.allDice.forEach(d => d.updateSimulationGraphics(elapsed, this.deltaTimeAccumulator));
         this.allDice.filter(d => !d.isAlive).forEach(d => { 
             this.removeDie(d);
             this.allDice.findSplice(ad => ad === d);
@@ -467,16 +467,19 @@ class DiceArea {
         this.debugLine.geometry.setAttribute("color", new THREE.BufferAttribute(buffers.colors, 4));
     }
 
-    async triggerRoll(roll: Roll, message?: ChatMessage): Promise<boolean> {
-        let played = false;
+    async startRoll(roll: Roll, message?: ChatMessage): Promise<boolean> {
         if (this.can3dRoll(roll)) {
-            played = true;
-            const promise = this.rollAndWait(roll.dice, message);
+            const hookResult = Hooks.call("simplyDice.canRoll", roll, message);
+            if (!hookResult)
+                return false;
+
+            const promise = this.rollAndWait(roll, true, message);
             if (game.modules.has("lib-wrapper") && getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
                 await promise;
+            return true;
         }
 
-        return played;
+        return false;
     }
 
     /**
@@ -501,9 +504,11 @@ class DiceArea {
      * Start a 3D roll to perform and wait until it is done
      * @param diceTerms terms of the roll
      */
-    async rollAndWait(diceTerms: DiceTermParameter[], message?: ChatMessage) {
+    async rollAndWait(roll: Roll, broadcast: boolean = true, options?: ChatMessage | { speakerActor?: Actor, whisper?: string[], blind?: boolean }) {
         const rollId = this.nextRollId;
         this.nextRollId++;
+
+        const diceTerms = roll.dice;
 
         const adjustedDiceTerms = diceTerms.map(d => { 
             return { 
@@ -528,25 +533,31 @@ class DiceArea {
             adjustedDiceTerms.push(newDice);
         });
 
+        let userId = game.userId;
+        if (options?.speakerActor?.hasPlayerOwner) {
+            const owner = game.users.getDesignatedUser(u => !u.isGM && options?.speakerActor?.getUserLevel(u) === CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER);
+            if (owner)
+                userId = owner.id;
+        }
+
         const params = {
             seed: Math.floor(Math.random() * 4294967296),
-            userId: game.userId,
+            userId,
             rollId,
             visibility: {
-                users: message?.whisper as string[],
-                blind: message?.blind
+                users: options?.whisper as string[] | undefined,
+                blind: options?.blind
             },
             diceTerms: adjustedDiceTerms
         } satisfies RollParameters;
+
+        Hooks.callAll("simplyDice.startRoll", params, true, options, roll);
+
         this.rollStack.push(params);
 
-        game.socket.emit(socketName, { type: "doRoll", data: { 
-            seed: params.seed,
-            userId: game.userId,
-            visibility: { users: message?.whisper as string[] },
-            diceTerms: adjustedDiceTerms
-            }} satisfies DoRollMessage);
-
+        if (broadcast)
+            game.socket.emit(socketName, { type: "doRoll", data: params } satisfies DoRollMessage);
+        
         await new Promise<void>((resolve) => { 
             this.rollPromiseResolve.set(rollId, resolve); 
             setTimeout(() => { 
@@ -556,6 +567,7 @@ class DiceArea {
                     resolve();
                 }
             }, getSetting<number>(SETTING.MAX_WAIT_TIME) * 1000); } );
+        Hooks.callAll("simplyDice.endRoll", params);
     }
 
     /**
@@ -564,6 +576,7 @@ class DiceArea {
      */
     enqueueRoll(roll: TryRollParameters) {
         roll.createdAt = Date.now();
+        Hooks.callAll("simplyDice.startRoll", roll, false);
         this.rollStack.push(roll);
     }
     
@@ -594,7 +607,10 @@ class DiceArea {
 
             this.rng.seed(params.seed);
 
-            const secret = params.visibility.users && params.visibility.users.length > 0 && !params.visibility.users.includes(game.userId) && (params.visibility.blind === undefined || params.visibility.blind);
+            const secret = params.visibility.forceSecret || 
+                (params.visibility.users && params.visibility.users.length > 0 && 
+                (!params.visibility.users.includes(game.userId) && 
+                (params.userId !== game.userId || params.visibility.blind)));
 
             const simulationData: SimulationRoll = {
                 randomNumbers: [],
