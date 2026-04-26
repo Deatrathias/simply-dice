@@ -11,7 +11,6 @@ import { SETTING } from "settings";
 import * as TSL from "three/tsl";
 import BloomNode, { bloom } from "three/addons/tsl/display/BloomNode.js";
 import OutlineNode, { outline } from "three/addons/tsl/display/OutlineNode.js";
-import { debugging } from "hooks";
 import { UserDiceMaterials } from "dice-materials";
 
 // That function is missing for some reason
@@ -104,8 +103,6 @@ class DiceArea {
     collisionMap: Map<number, number>;
 
     areaSize = new THREE.Vector2();
-
-    debugModel?: THREE.Object3D;
 
     maxDice: number | null;
 
@@ -200,14 +197,6 @@ class DiceArea {
         this.scene.add(this.floor);
         this.camera.position.y = 40;
         this.camera.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), -HALF_PI);
-
-        if (!debugging)
-            return;
-        this.debugModel = getDiceModel("d10")?.instantiateModel(game.simplyDice.userMaterials!.get(game.userId)!.getMaterialSet("d10")!);
-        this.debugModel?.quaternion.set(-0.0499904803327302, -0.07139380484326963, -0.0868240888334651, 0.9924038765061041);
-
-        if (this.debugModel)
-            this.scene.add(this.debugModel);
     }
 
     /**
@@ -425,7 +414,7 @@ class DiceArea {
         if (this.rollStack.length > 0)
             this.doRoll();
 
-        if (this.allDice.length == 0 && !this.debugModel) {
+        if (this.allDice.length == 0) {
             this.changeCanvasVisibility(false);
             return;
         }
@@ -434,7 +423,7 @@ class DiceArea {
         }
 
         const elapsed = this.timer.getElapsed();
-        this.allDice.forEach(d => d.updateSimulationGraphics(elapsed, this.deltaTimeAccumulator));
+        this.allDice.forEach(d => d.updateSimulationGraphics(elapsed, this.deltaTimeAccumulator / this.timer.getTimescale()));
         this.allDice.filter(d => !d.isAlive).forEach(d => { 
             this.removeDie(d);
             this.allDice.findSplice(ad => ad === d);
@@ -476,6 +465,19 @@ class DiceArea {
             const promise = this.rollAndWait(roll, true, message);
             if (game.modules.has("lib-wrapper") && getSetting<boolean>(SETTING.WAIT_FOR_ROLL))
                 await promise;
+            return true;
+        }
+
+        return false;
+    }
+
+    startRollSynced(roll: Roll, message?: ChatMessage): boolean {
+        if (this.can3dRoll(roll)) {
+            const hookResult = Hooks.call("simplyDice.canRoll", roll, message);
+            if (!hookResult)
+                return false;
+
+            this.rollAndWait(roll, true, message);
             return true;
         }
 
@@ -674,7 +676,7 @@ class DiceArea {
             rolls,
         } satisfies SimulationStartData;
 
-        WORKER.startSimulation(simulationData);      
+        WORKER.startSimulation(simulationData);
     }
 
     /**
@@ -715,22 +717,6 @@ class DiceArea {
             this.removeDie(d);
         });
         this.allDice.length = 0;
-    }
-
-    debugWindowRotation(x: number, y: number, z: number) {
-        if (!this.debugModel)
-            return;
-
-        this.debugModel.applyQuaternion(new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.toRadians(x), Math.toRadians(y), Math.toRadians(z))));
-
-        console.log(this.debugModel.quaternion.toArray());
-    }
-
-    debugWindowReset() {
-        if (!this.debugModel)
-            return;
-
-        this.debugModel.quaternion.identity();
     }
 }
 

@@ -201,7 +201,7 @@ class DiceObject {
         this.simulation = undefined;
         this.running = false;
         this.runStartTime = undefined;
-        if (this.rollId) {
+        if (this.rollId !== undefined) {
             const promises = game.simplyDice.diceArea?.rollPromiseResolve;
             const resolve = promises?.get(this.rollId);
 

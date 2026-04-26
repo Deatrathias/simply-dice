@@ -1,4 +1,4 @@
-import { MODULE } from "@7h3laughingman/foundry-helpers/utilities";
+import { getSetting, MODULE } from "@7h3laughingman/foundry-helpers/utilities";
 import { DiceMaterialsConfigWindow } from "dice-config";
 import { diceMaterialConfigSchema } from "dice-materials";
 import * as WORKER from "physics-worker-handler";
@@ -35,10 +35,11 @@ export function registerSettings() {
         onChange: value => { 
             if (game.simplyDice.diceArea)
                 game.simplyDice.diceArea.timescale = value as number; 
+            WORKER.updateSettings({ timeUntilDisappearance: getSetting<number>(SETTING.TIME_UNTIL_DISAPPEARANCE) * (value as number) });
         } 
     });
     registerSetting({ id: SETTING.TIME_UNTIL_DISAPPEARANCE, type: new NumberField({ nullable: false, min: 0.1 }), default: 4, scope: "world",
-        onChange: value => WORKER.updateSettings({ timeUntilDisappearance: value as number }) });
+        onChange: value => WORKER.updateSettings({ timeUntilDisappearance: (value as number) * getSetting<number>(SETTING.TIMESCALE) }) });
     registerSetting({ id: SETTING.WAIT_FOR_ROLL, type: new BooleanField(), default: false, scope: "world" });
     registerSetting({ id: SETTING.MAX_WAIT_TIME, type: new NumberField({ nullable: false, min: 0 }), default: 4, scope: "world" });
     registerSetting({ id: SETTING.THROW_IMPULSE, type: new NumberField({ nullable: false, min: 0, max: 100 }), default: 5, scope: "world", 
