@@ -111,6 +111,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         color: new ColorField({ initial: "#ffffff", nullable: false, required: true }),
         colorMap: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
         transparent: new BooleanField(),
+        doubleSided: new BooleanField(),
         opacity: new AlphaField({ step: 0.01 }),
         roughness: new AlphaField({ step: 0.01 }),
         roughnessMap: new FilePathField({ nullable: true, categories: ["IMAGE"] }),
@@ -647,11 +648,22 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         }
 
         const transparent = this.form["transparent"];
-        const opacity = this.form["opacity"];
-        if (transparent && opacity) {
-            opacity.disabled = !transparent.checked;
-            if (opacity.disabled)
-                opacity.value = 1;
+        const opacity = this.form["opacity"] as HTMLInputElement;
+        const doubleSided = this.form["doubleSided"] as HTMLInputElement;
+        if (transparent) {
+            const hidden = !transparent.checked;
+            if (opacity) {
+                opacity.disabled = hidden;
+                (opacity.closest("div.form-group") as HTMLDivElement).hidden = hidden;
+                if (hidden)
+                    opacity.value = "1";
+            }
+            if (doubleSided) {
+                doubleSided.disabled = hidden;
+                (doubleSided.closest("div.form-group") as HTMLDivElement).hidden = hidden;
+                if (hidden)
+                    doubleSided.checked = false;
+            }
         }
 
         if (this.currentPath !== "global") {
@@ -680,6 +692,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
             color: config.color === "user" ? game.user.color : config.color,
             colorMap: config.colorMap,
             transparent: config.transparent,
+            doubleSided: config.doubleSided,
             opacity: config.opacity,
             roughness: config.roughness,
             roughnessMap: config.roughnessMap,
@@ -720,6 +733,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
             color: context.usePlayerColor ? "user" : context.color,
             colorMap: toStringNull(context.colorMap),
             transparent: context.transparent,
+            doubleSided: context.transparent ? context.doubleSided : false,
             opacity: context.transparent ? context.opacity as number : 1,
             roughness: context.roughness as number,
             roughnessMap: toStringNull(context.roughnessMap),

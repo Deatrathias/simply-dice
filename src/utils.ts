@@ -24,6 +24,16 @@ export function colorToStyle(color: number): string {
     return `rgba(${(color >>> 16) & 255}, ${(color >>> 8) & 255}, ${color & 255}, ${(color >>> 24) & 255})`;
 }
 
+export function addAlpha(color: string | foundry.utils.Color, alpha: number): string {
+    let fcolor;
+    if (typeof color === "string")
+        fcolor = foundry.utils.Color.fromString(color);
+    else
+        fcolor = color;
+
+    return fcolor.toRGBA(alpha);
+}
+
 /**
  * Remove all undefined values from an object
  * @param o object

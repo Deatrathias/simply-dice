@@ -56,7 +56,7 @@ async function onPreCreate(...document: ChatMessage[]) {
     if (promises.length > 0) {
         const rolled = await Promise.all(promises);
         if (rolled.find(b => b)) {
-            document.forEach(m => m.updateSource( foundry.utils.isNewerVersion(game.version, "14") ? { sound: new foundry.data.operators.ForcedDeletion() } : {"-=sound": null}));
+            document.forEach(m => m.updateSource( foundry.utils.isNewerVersion(game.version, "14") ? { sound: _del } : {"-=sound": null}));
         }
     }
 }
@@ -72,7 +72,7 @@ function onPreCreateSynced(...document: ChatMessage[]) {
         if (message.rolls) {
             const rolled = message.rolls.reduce((accumulator, roll) => game.simplyDice.diceArea!.startRollSynced(roll, message) || accumulator, false);
             if (rolled)
-                document.forEach(m => m.updateSource( foundry.utils.isNewerVersion(game.version, "14") ? { sound: new foundry.data.operators.ForcedDeletion() } : {"-=sound": null}));
+                document.forEach(m => m.updateSource( foundry.utils.isNewerVersion(game.version, "14") ? { sound: _del } : {"-=sound": null}));
         }
     }
 }

@@ -3,7 +3,7 @@ import { DiceModel, DiceTextDefinition, forEveryModel } from "dice-definition";
 import { SETTING } from "settings";
 import * as TSL from "three/tsl";
 import * as THREE from "three/webgpu";
-import { cleanup } from "utils";
+import { addAlpha, cleanup } from "utils";
 
 const { SchemaField, ColorField, FilePathField, NumberField, StringField, TypedObjectField, BooleanField, AlphaField } = foundry.data.fields;
 
@@ -11,6 +11,7 @@ type DiceMaterialConfig = {
     color: string | Color | "user",
     colorMap: string | null,
     transparent: boolean,
+    doubleSided: boolean,
     opacity: number,
     roughness: number,
     roughnessMap: string | null,
@@ -48,6 +49,7 @@ const defaultMaterialConfig = {
     color: "user",
     colorMap: null,
     transparent: false,
+    doubleSided: false,
     opacity: 1,
     roughness: 0.5,
     roughnessMap: null,
@@ -108,6 +110,7 @@ const diceMaterialConfigSchema = new SchemaField({
     colorMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
     roughness: new AlphaField({ required: false, initial: undefined }),
     transparent: new BooleanField({ required: false, initial: undefined }),
+    doubleSided: new BooleanField({ required: false, initial: undefined }),
     opacity: new AlphaField({ required: false, initial: undefined }),
     roughnessMap: new FilePathField({ nullable: true, categories: ["IMAGE"], required: false, initial: undefined }),
     metalness: new AlphaField({ required: false, initial: undefined }),
@@ -422,6 +425,7 @@ class DiceMaterial {
 
         this.material.transparent = this.config.transparent;
         this.transparentNode!.value = this.config.transparent;
+        this.material.side = this.config.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
         this.opacity!.value = this.config.opacity;
         this.material.setValues({
             color: typeof this.config.color !== "string" ? this.config.color.css : this.config.color,
@@ -500,9 +504,9 @@ class DiceMaterial {
         context.font = `${config.weight ?? ""} ${textHeight}px ${config.font}`;
         context.textAlign = "center";
         context.lineCap = "round";
-        context.fillStyle = config.color.toString();
-        context.strokeStyle = config.outlineColor.toString();
-        context.lineWidth = 5;
+        context.fillStyle = addAlpha(config.color, config.opacity);
+        context.strokeStyle = addAlpha(config.outlineColor, config.outlineOpacity);
+        context.lineWidth = 10;
 
         this.drawText(context, definition, config, false, symbolMap);
 
@@ -532,16 +536,18 @@ class DiceMaterial {
         context.shadowOffsetX = 0;
         context.shadowOffsetY = 0;
         if (!mask) {
-            context.shadowColor = config.outlineColor.toString();
+            context.shadowColor = addAlpha(config.outlineColor, config.outlineOpacity);
             context.shadowBlur = 3;
         } else {
             context.shadowColor = "black";
             context.shadowBlur = 2;
         }
+        context.lineWidth = definition.height / 15;
         context.globalAlpha = 1;
 
         for (const textItem of definition.items) {
             context.resetTransform();
+            context.globalAlpha = 1;
 
             context.translate(textItem.position[0] * wratio, textItem.position[1] * hratio);
             if (textItem.rotation)
@@ -564,6 +570,8 @@ class DiceMaterial {
                 width = Math.max(width, 2);
                 height = Math.max(height, 2);
 
+                context.globalAlpha = config.opacity;
+
                 context.drawImage(symbol, 0, 0, symbol.naturalWidth, symbol.naturalHeight, -width / 2, -height / 2, width, height);
 
                 // For applying color on the image
@@ -578,7 +586,7 @@ class DiceMaterial {
                     intermediateContext.globalCompositeOperation = "source-over";
                     intermediateContext.drawImage(symbol, 0, 0, symbol.naturalWidth, symbol.naturalHeight, 0, 0, width, height);
                     intermediateContext.globalCompositeOperation = "source-atop";
-                    intermediateContext.fillStyle = config.color.toString();
+                    intermediateContext.fillStyle = addAlpha(config.color, config.opacity);
                     intermediateContext.fillRect(0, 0, width, height);
 
                     context.save();
@@ -586,6 +594,7 @@ class DiceMaterial {
                     // Paint the intermediate canvas on top of the image with multiply
                     context.shadowColor = "rgba(0, 0, 0, 0)";
                     context.globalCompositeOperation = "multiply";
+                    context.globalAlpha = config.opacity;
                     context.drawImage(DiceMaterial.intermediateCanvas, 0, 0, width, height, -width / 2, -height / 2, width, height);
 
                     context.restore();
@@ -605,19 +614,8 @@ class DiceMaterial {
     }
 
     private write(text: string, context: OffscreenCanvasRenderingContext2D, opacity: number, outlineOpacity: number, maxWidth: number, mask: boolean) {
-        if (!mask) {
-            // Outline stroke
-            context.save();
-            context.shadowColor = "rgba(0, 0, 0, 0)";
-            context.globalAlpha = outlineOpacity
-            context.strokeText(text, 0, 0, maxWidth);
-            context.restore();
-
-            context.globalAlpha = opacity;
-        }
-        else {
-            context.strokeText(text, 0, 0, maxWidth);
-        }
+        context.strokeText(text, 0, 0, maxWidth);
+        
         context.fillText(text, 0, 0, maxWidth);
     }
 

@@ -95,6 +95,10 @@
                     "label": "Transparent",
                     "hint": "Is the material transparent? Opacity and color map alpha will be used."
                 },
+                "doubleSided": {
+                    "label": "Double-sided",
+                    "hint": "Should faces be rendered from behind."
+                },
                 "opacity": {
                     "label": "Opacity"
                 },
