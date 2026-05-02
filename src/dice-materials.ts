@@ -267,9 +267,9 @@ class UserDiceMaterials {
 
         if (this.settingGroup) {
             foundry.utils.mergeObject(result, this.settingGroup.global, { recursive: true });
-            foundry.utils.mergeObject(result, this.settingGroup[`global.${submat}`], { recursive: true });
+            foundry.utils.mergeObject(result, this.settingGroup[`global/${submat}`], { recursive: true });
             foundry.utils.mergeObject(result, this.settingGroup[denomination], { recursive: true });
-            foundry.utils.mergeObject(result, this.settingGroup[`${denomination}.${submat}`], { recursive: true });
+            foundry.utils.mergeObject(result, this.settingGroup[`${denomination}/${submat}`], { recursive: true });
         }
 
         if (result.color === "user") {
@@ -290,18 +290,18 @@ class UserDiceMaterials {
             return result;
         }
 
-        const subpaths = path.split(".");
+        const subpaths = path.split("/");
 
         const last = subpaths[subpaths.length - 1];
         if (last === "faces" || last === "edges")
-            foundry.utils.mergeObject(result, this.settingGroup[`global.${last}`], { recursive: true });
+            foundry.utils.mergeObject(result, this.settingGroup[`global/${last}`], { recursive: true });
         let builder = "";
 
         for (const subpath of subpaths) {
             if (builder === "")
                 builder = subpath;
             else
-                builder = builder.concat(".", subpath);
+                builder = builder.concat("/", subpath);
 
             foundry.utils.mergeObject(result, this.settingGroup[builder], { recursive: true });
         }

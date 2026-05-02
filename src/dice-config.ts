@@ -201,7 +201,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
      * @returns string path
      */
     parentPath() {
-        const split = this.currentPath.split(".");
+        const split = this.currentPath.split("/");
         if (split.length === 1) {
             if (split[0] === "global")
                 return "";
@@ -210,7 +210,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         }
 
         split.pop();
-        return split.join(".");
+        return split.join("/");
     }
 
     static navigate(event: PointerEvent, target: HTMLElement) {
@@ -227,9 +227,9 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         if (!path)
             return;
 
-        const split = path.split(".");
+        const split = path.split("/");
         if (split[0] === "global" && split.length > 1 && DiceMaterialsConfigWindow.diceDenomination?.includes(split[1]))
-            this.currentPath = split.slice(1).join(".");
+            this.currentPath = split.slice(1).join("/");
         else
             this.currentPath = path;
         this.refreshPath();
@@ -286,7 +286,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
                     label: "SIMPLY-DICE.DiceMaterialsConfigWindow.BUTTONS.submit"
                 }];
         } else if (partId === "navigation") {
-            const path = this.currentPath.split(".");
+            const path = this.currentPath.split("/");
             if (path[0] !== "global")
                 path.unshift("global");
 
@@ -296,7 +296,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
                 accumulator.push(p);
                 return {
                     key: p,
-                    path: accumulator.join("."),
+                    path: accumulator.join("/"),
                     label: `SIMPLY-DICE.DicePaths.${p}`,
                     hasChild: p !== "faces" && p !== "edges",
                     notLast: i !== path.length - 1,
@@ -348,13 +348,13 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         menuEntries.push({
             name: `SIMPLY-DICE.DicePaths.faces`,
             group: "submat",
-            callback: (target) => this.navigatePath(`${target.dataset["path"]}.faces`),
+            callback: (target) => this.navigatePath(`${target.dataset["path"]}/faces`),
             icon: foundry.applications.fields.createFontAwesomeIcon(DiceMaterialsConfigWindow.iconForPath["faces"], { style: "solid" }).outerHTML
         });
         menuEntries.push({
             name: `SIMPLY-DICE.DicePaths.edges`,
             group: "submat",
-            callback: (target) => this.navigatePath(`${target.dataset["path"]}.edges`),
+            callback: (target) => this.navigatePath(`${target.dataset["path"]}/edges`),
             icon: foundry.applications.fields.createFontAwesomeIcon(DiceMaterialsConfigWindow.iconForPath["edges"], { style: "solid" }).outerHTML
         });
 
@@ -435,7 +435,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         } else {
             this.camera.position.y = 6;
 
-            const denomination = this.currentPath.split(".")[0];
+            const denomination = this.currentPath.split("/")[0];
             const model = getDiceModel(denomination);
             const mesh = model?.instantiateModel(this.materials!.getMaterialSet(denomination)!);
             if (!mesh) {
@@ -477,7 +477,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         if (!(this instanceof DiceMaterialsConfigWindow))
             return;
 
-        const root = this.currentPath.split(".")[0];
+        const root = this.currentPath.split("/")[0];
         let formula;
         if (root === "global") {
             formula = DiceMaterialsConfigWindow.diceToPreview.map(d => {
@@ -512,7 +512,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
             this.addSymbolDialog = undefined;
         }
 
-        const denomination = this.currentPath.split(".")[0];
+        const denomination = this.currentPath.split("/")[0];
         if (denomination === "global")
             return;
 
@@ -782,7 +782,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
     }
 
     cleanConfigGroup() {
-        const settingType = game.settings.settings.get(MODULE.id + "." + SETTING.DICE_MATERIALS)?.type;
+        const settingType = game.settings.settings.get(MODULE.id + "/" + SETTING.DICE_MATERIALS)?.type;
         if (settingType && settingType instanceof TypedObjectField) {
             settingType.clean(this.configGroup);
             UTILS.cleanup(this.configGroup);
