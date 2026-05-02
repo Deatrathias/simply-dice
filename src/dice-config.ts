@@ -782,7 +782,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
     }
 
     cleanConfigGroup() {
-        const settingType = game.settings.settings.get(MODULE.id + "/" + SETTING.DICE_MATERIALS)?.type;
+        const settingType = game.settings.settings.get(MODULE.id + "." + SETTING.DICE_MATERIALS)?.type;
         if (settingType && settingType instanceof TypedObjectField) {
             settingType.clean(this.configGroup);
             UTILS.cleanup(this.configGroup);
