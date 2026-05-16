@@ -215,7 +215,10 @@ class UserDiceMaterials {
      * @param settings Updated settings
      */
     updateMaterials(settings?: DiceMaterialConfigGroup, force?: boolean, doSecret: boolean = true) {
-        this.settingGroup = settings;
+        if (!settings)
+            this.settingGroup = (game.settings.storage.get("user") as unknown as foundry.documents.collections.WorldSettings).getSetting(`${MODULE.id}.${SETTING.DICE_MATERIALS}`, this.userId)?.value as DiceMaterialConfigGroup | undefined | null ?? undefined;
+        else
+            this.settingGroup = settings;
 
         cleanup(this.settingGroup);
 

@@ -25,6 +25,7 @@ function initDiceArea() {
 }
 
 type RollParameters = {
+    id: string,
     seed: number,
     userId: string,
     rollId?: number,
@@ -543,6 +544,7 @@ class DiceArea {
         }
 
         const params = {
+            id: foundry.utils.randomID(),
             seed: Math.floor(Math.random() * 4294967296),
             userId,
             rollId,

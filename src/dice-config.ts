@@ -495,6 +495,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         const roll = new foundry.dice.Roll(formula);
 
         game.simplyDice.diceArea?.enqueueRoll({
+            id: foundry.utils.randomID(),
             seed: Math.floor(Math.random() * 4294967296),
             userId: game.userId,
             visibility: { blind: false },

@@ -5,7 +5,7 @@
   "socket": true,
   "compatibility": {
     "minimum": "13",
-    "verified": "14.360"
+    "verified": "14.361"
   },
   "url": "#{URL}#",
   "manifest": "#{MANIFEST}#",
@@ -17,7 +17,7 @@
         "type": "module",
         "compatibility": {
           "minimum": "1.13.4.0",
-          "verified": "1.13.4.0"
+          "verified": "1.13.5.1"
         }
       }
     ]
