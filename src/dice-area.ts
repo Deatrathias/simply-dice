@@ -36,7 +36,6 @@ type RollParameters = {
 }
 
 type DiceTermParameter = {
-    number: number | void,
     denomination: string,
     results: {
         result: number;
@@ -516,14 +515,16 @@ class DiceArea {
         const adjustedDiceTerms = diceTerms.map(d => { 
             return { 
                 denomination: d.denomination, 
-                number: d.number, 
-                results: d.results.map(r => { return { result: r.result }; }) } satisfies DiceTermParameter });
+                results: d.results.filter(r => !r.hidden).map(r => { return { result: r.result }; }) } satisfies DiceTermParameter 
+            }).filter(d => d.results.length > 0);
+
+        if (adjustedDiceTerms.length === 0)
+            return;
 
         // Case for the d100
         adjustedDiceTerms.filter(d => d.denomination === "d100").forEach(d => {
             const newDice = { 
                 denomination: "d10", 
-                number: d.number,
                 results: [...d.results.map(r => {
                     let result = { result: r.result % 10 };
                     if (result.result == 0)
@@ -627,7 +628,7 @@ class DiceArea {
                     continue;
                 
                 effectiveDiceTerms.push(term);
-                const diceCount = term.number ?? 0;
+                const diceCount = term.results.length;
                 for (let i = 0; i < diceCount; i++) {
                     const result = term.results[i]?.result;
 

@@ -15,8 +15,15 @@ declare module "@7h3laughingman/foundry-types/client/_module.mjs" {
         simplyDice: {
             diceArea?: DiceArea,
             textureManager?: TextureManager,
-            userMaterials?: Map<string, UserDiceMaterials>
-        }
+            userMaterials?: Map<string, UserDiceMaterials>,
+        },
+        dice3d?: unknown
+    }
+}
+
+declare module "@7h3laughingman/foundry-types/client/dice/_module.mjs" {
+    interface DiceTermResult {
+        hidden?: boolean;
     }
 }
 
