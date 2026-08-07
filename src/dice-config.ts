@@ -473,7 +473,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         this.renderPipeline?.render();
     }
 
-    static tryRoll() {
+    static async tryRoll() {
         if (!(this instanceof DiceMaterialsConfigWindow))
             return;
 
@@ -493,6 +493,7 @@ class DiceMaterialsConfigWindow extends HandlebarsApplicationMixin(ApplicationV2
         }
 
         const roll = new foundry.dice.Roll(formula);
+        await roll.evaluate();
 
         game.simplyDice.diceArea?.enqueueRoll({
             id: foundry.utils.randomID(),
